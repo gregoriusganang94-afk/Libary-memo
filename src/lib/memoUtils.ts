@@ -81,6 +81,7 @@ export function parseActionLogs(raw: unknown): ActionLogEntry[] {
           obj.by ??
           'Petugas'
       ),
+      actorUserId: obj.actorUserId ? String(obj.actorUserId) : undefined,
       role: obj.role ? String(obj.role) : undefined,
       action: String(obj.action ?? obj.type ?? obj.status ?? 'Tindakan'),
       note: String(
@@ -224,12 +225,64 @@ export function canDeleteMemo(user: SessionUser, memo: RepairMemo): boolean {
   return false;
 }
 
-export function canWorkMemo(user: SessionUser, memo: RepairMemo): boolean {
+export function isMemoLockedByStatus(status: MemoStatus): boolean {
+  return (
+    status === 'Selesai' ||
+    status === 'Tervalidasi SPV' ||
+    status === 'Dibatalkan'
+  );
+}
+
+export function isAssignedTechnician(
+  user: SessionUser,
+  memo: RepairMemo
+): boolean {
+  if (user.role !== 'TEKNISI') return false;
+  const techNameClean = memo.technicianName.trim().toLowerCase();
+  if (!techNameClean) return false;
+
+  const logs = parseActionLogs(memo.actionLogsJson);
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const entry = logs[i];
+    if (
+      entry.action === 'Klaim Pengerjaan' &&
+      entry.actorUserId &&
+      entry.actor.trim().toLowerCase() === techNameClean
+    ) {
+      return entry.actorUserId === user.userId;
+    }
+  }
+
+  return (
+    techNameClean === user.fullName.trim().toLowerCase() ||
+    techNameClean === user.username.trim().toLowerCase()
+  );
+}
+
+export function canClaimMemo(user: SessionUser, memo: RepairMemo): boolean {
+  if (isMemoLockedByStatus(memo.status)) return false;
+  if (memo.technicianName.trim()) return false;
   if (user.role === 'ADMIN') return true;
   if (user.role === 'TEKNISI') {
     return Boolean(user.specialization && memo.category === user.specialization);
   }
   return false;
+}
+
+export function canWorkMemo(user: SessionUser, memo: RepairMemo): boolean {
+  if (isMemoLockedByStatus(memo.status)) return false;
+  if (user.role === 'ADMIN') return true;
+  if (user.role === 'TEKNISI') {
+    if (!user.specialization || memo.category !== user.specialization) {
+      return false;
+    }
+    return isAssignedTechnician(user, memo);
+  }
+  return false;
+}
+
+export function canReopenMemo(user: SessionUser, memo: RepairMemo): boolean {
+  return user.role === 'ADMIN' && isMemoLockedByStatus(memo.status);
 }
 
 export function canValidateMemo(user: SessionUser): boolean {

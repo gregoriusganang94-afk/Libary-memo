@@ -4,21 +4,26 @@ import {
   CheckCircle2,
   ClipboardPlus,
   ImageOff,
+  Lock,
   PackagePlus,
   RotateCcw,
   Save,
   ShieldCheck,
   Trash2,
+  Unlock,
   Wrench,
   X,
   XCircle,
 } from 'lucide-react';
 import { formatDateIndo } from '../lib/dateUtils';
 import {
+  canClaimMemo,
   canDeleteMemo,
+  canReopenMemo,
   canValidateMemo,
   canWorkMemo,
   compressImageToDataUrl,
+  isMemoLockedByStatus,
   isRenderableImageUri,
   parseActionLogs,
   parsePartsList,
@@ -44,7 +49,10 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
   memo,
   onClose,
 }) => {
+  const isLocked = isMemoLockedByStatus(memo.status);
+  const canClaim = canClaimMemo(user, memo);
   const canWork = canWorkMemo(user, memo);
+  const canReopen = canReopenMemo(user, memo);
   const canValidate = canValidateMemo(user);
   const canDelete = canDeleteMemo(user, memo);
 
@@ -69,6 +77,7 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
   const [uploadingField, setUploadingField] = useState<'before' | 'after' | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [showCompletionPopup, setShowCompletionPopup] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
@@ -81,6 +90,7 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
       actor: user.fullName,
+      actorUserId: user.userId,
       role: user.role,
       action,
       note,
@@ -91,17 +101,19 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
   const runUpdate = async (
     updates: Parameters<typeof updateRepairMemo>[1],
     successText: string
-  ) => {
+  ): Promise<boolean> => {
     setSaving(true);
     setFeedback(null);
     try {
       await updateRepairMemo(memo._docId, updates, user.userId);
       setFeedback({ type: 'ok', text: successText });
+      return true;
     } catch (err) {
       setFeedback({
         type: 'err',
         text: err instanceof Error ? err.message : 'Gagal memperbarui memo.',
       });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -150,9 +162,9 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
     );
   };
 
-  const handleCompleteWork = () => {
+  const handleCompleteWork = async () => {
     const completedVal = formatValueForSchema(Date.now(), memo._rawReportedAtType);
-    runUpdate(
+    const ok = await runUpdate(
       {
         technicianName: memo.technicianName || user.fullName,
         status: 'Selesai',
@@ -164,6 +176,23 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
         ),
       },
       'Perbaikan ditandai Selesai. Menunggu validasi Supervisor.'
+    );
+    if (ok) {
+      setShowCompletionPopup(true);
+    }
+  };
+
+  const handleReopenMemo = () => {
+    runUpdate(
+      {
+        status: 'Dalam Pengerjaan',
+        completedAt: null,
+        actionLogsJson: appendLog(
+          'Memo Dibuka Kembali',
+          `Memo dibuka kembali oleh Admin (${user.fullName}) untuk penyesuaian.`
+        ),
+      },
+      'Memo berhasil dibuka kembali. Catatan dan suku cadang kini dapat diedit.'
     );
   };
 
@@ -399,13 +428,39 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
             </p>
           </div>
 
-          {canWork && memo.status !== 'Tervalidasi SPV' && memo.status !== 'Dibatalkan' && (
+          {isLocked ? (
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-4 bg-slate-50 dark:bg-slate-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-300">
+                <Lock className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-slate-900 dark:text-slate-100">
+                    Form Memo Terkunci ({memo.status})
+                  </p>
+                  <p className="mt-0.5 text-slate-600 dark:text-slate-400">
+                    Catatan pengerjaan dan daftar suku cadang tidak dapat diedit saat status sudah{' '}
+                    {memo.status}. Hanya akun Admin yang dapat membuka kembali memo ini jika diperlukan.
+                  </p>
+                </div>
+              </div>
+              {canReopen && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={handleReopenMemo}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 dark:bg-blue-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-600 disabled:opacity-60 min-h-[42px] shrink-0"
+                >
+                  <Unlock className="w-4 h-4" />
+                  <span>Open Memo Kembali</span>
+                </button>
+              )}
+            </div>
+          ) : (canClaim || canWork) ? (
             <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-4 bg-slate-50 dark:bg-slate-950 space-y-3">
               <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200">
                 Tindakan Pengerjaan ({user.role === 'TEKNISI' ? `Teknisi ${user.specialization}` : 'Admin'})
               </h3>
               <div className="flex flex-wrap gap-2">
-                {(memo.status === 'Menunggu Pengerjaan' || !memo.technicianName) && (
+                {canClaim && (
                   <button
                     type="button"
                     disabled={saving}
@@ -417,7 +472,7 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
                   </button>
                 )}
 
-                {memo.status === 'Dalam Pengerjaan' && (
+                {canWork && memo.status === 'Dalam Pengerjaan' && (
                   <button
                     type="button"
                     disabled={saving}
@@ -428,7 +483,7 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
                   </button>
                 )}
 
-                {memo.status === 'Menunggu Sparepart' && (
+                {canWork && memo.status === 'Menunggu Sparepart' && (
                   <button
                     type="button"
                     disabled={saving}
@@ -439,9 +494,10 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
                   </button>
                 )}
 
-                {(memo.status === 'Dalam Pengerjaan' ||
-                  memo.status === 'Menunggu Sparepart' ||
-                  memo.status === 'Menunggu Pengerjaan') && (
+                {canWork &&
+                  (memo.status === 'Dalam Pengerjaan' ||
+                    memo.status === 'Menunggu Sparepart' ||
+                    memo.status === 'Menunggu Pengerjaan') && (
                   <button
                     type="button"
                     disabled={saving}
@@ -453,8 +509,20 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
                   </button>
                 )}
               </div>
+              {canClaim && !canWork && user.role === 'TEKNISI' && (
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Ketuk <strong>Klaim & Kerjakan</strong> untuk mengambil memo ini dan membuka pengisian form catatan serta suku cadang.
+                </p>
+              )}
             </div>
-          )}
+          ) : user.role === 'TEKNISI' && memo.technicianName.trim() ? (
+            <div className="border border-amber-200 dark:border-amber-900 rounded-xl p-3.5 bg-amber-50 dark:bg-amber-950/50 flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+              <Lock className="w-4 h-4 shrink-0 mt-0.5" />
+              <p>
+                Memo ini sedang ditangani oleh <strong>{memo.technicianName}</strong>. Hanya akun teknisi tersebut dan Admin yang dapat memilih proses pengerjaan maupun mengisi form memo.
+              </p>
+            </div>
+          ) : null}
 
           {isWorkshop && (
             <div className="space-y-3">
@@ -554,7 +622,7 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
             <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300">
               Catatan Pengerjaan / Teknisi
             </h3>
-            {canWork || canValidate ? (
+            {canWork ? (
               <div className="space-y-2">
                 <textarea
                   rows={2}
@@ -687,7 +755,7 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
               </p>
             )}
 
-            {(canWork || canValidate) && (
+            {canWork && (
               <form onSubmit={handleAddActionLog} className="flex gap-2">
                 <input
                   type="text"
@@ -834,6 +902,39 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
           )}
         </div>
       </div>
+
+      {showCompletionPopup && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="completion-reminder-title"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 p-4"
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-center space-y-4">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div className="space-y-1.5">
+              <h3
+                id="completion-reminder-title"
+                className="text-base font-bold text-slate-900 dark:text-slate-100"
+              >
+                Perbaikan Selesai
+              </h3>
+              <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                Pastikan semua alat kerja lengkap dan bersih, terima kasih.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCompletionPopup(false)}
+              className="w-full rounded-lg bg-slate-900 dark:bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-600 min-h-[44px]"
+            >
+              OK, Mengerti
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
