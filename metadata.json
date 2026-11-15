@@ -1,0 +1,6 @@
+{
+  "name": "Memo Perbaikan Mesin — Pura Group Unit Offset",
+  "description": "Aplikasi Web App dan PWA pencatatan, pelacakan, dan validasi memo perbaikan mesin Pura Group Unit Offset.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

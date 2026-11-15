@@ -1,0 +1,161 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Akun pengguna aplikasi Memo Perbaikan Mesin Pura Group Unit Offset",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "ID unik pengguna",
+          "maxLength": 128
+        },
+        "username": {
+          "type": "string",
+          "description": "Username untuk login",
+          "maxLength": 64
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Nama lengkap pengguna",
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["ADMIN", "SUPERVISOR", "TEKNISI", "PRODUKSI", "TAMU"],
+          "description": "Peran pengguna dalam sistem"
+        },
+        "specialization": {
+          "type": "string",
+          "enum": ["", "Listrik", "Mekanik", "Workshop"],
+          "description": "Bidang keahlian wajib untuk TEKNISI"
+        },
+        "password": {
+          "type": "string",
+          "description": "Hash PBKDF2-HMAC-SHA256 atau password migrasi",
+          "maxLength": 256
+        }
+      },
+      "required": ["userId", "username", "fullName", "role", "password"]
+    },
+    "RepairMemo": {
+      "title": "RepairMemo",
+      "description": "Dokumen memo perbaikan mesin Unit Offset",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID unik memo",
+          "maxLength": 128
+        },
+        "memoNumber": {
+          "type": "string",
+          "description": "Nomor memo perbaikan",
+          "maxLength": 64
+        },
+        "title": {
+          "type": "string",
+          "description": "Judul kerusakan atau nama mesin",
+          "maxLength": 200
+        },
+        "category": {
+          "type": "string",
+          "enum": ["Listrik", "Mekanik", "Workshop"],
+          "description": "Kategori perbaikan"
+        },
+        "description": {
+          "type": "string",
+          "description": "Deskripsi detail kerusakan",
+          "maxLength": 4000
+        },
+        "location": {
+          "type": "string",
+          "description": "Lokasi mesin atau area produksi",
+          "maxLength": 200
+        },
+        "reporterName": {
+          "type": "string",
+          "description": "Nama pelapor",
+          "maxLength": 120
+        },
+        "reporterUserId": {
+          "type": "string",
+          "description": "ID akun pelapor",
+          "maxLength": 128
+        },
+        "technicianName": {
+          "type": "string",
+          "description": "Nama teknisi yang menangani",
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Menunggu Pengerjaan",
+            "Dalam Pengerjaan",
+            "Menunggu Sparepart",
+            "Selesai",
+            "Tervalidasi SPV",
+            "Dibatalkan"
+          ],
+          "description": "Status alur perbaikan memo"
+        },
+        "targetCompletionDate": {
+          "type": "string",
+          "description": "Target tanggal selesai",
+          "maxLength": 64
+        },
+        "notes": {
+          "type": "string",
+          "description": "Catatan pengerjaan",
+          "maxLength": 4000
+        },
+        "actionLogsJson": {
+          "type": "string",
+          "description": "JSON string riwayat log tindakan perbaikan"
+        },
+        "partsListJson": {
+          "type": "string",
+          "description": "JSON string daftar suku cadang yang digunakan"
+        },
+        "beforeImageUri": {
+          "type": "string",
+          "description": "URI atau data URL foto sebelum perbaikan (khusus Workshop)"
+        },
+        "afterImageUri": {
+          "type": "string",
+          "description": "URI atau data URL foto sesudah perbaikan (khusus Workshop)"
+        },
+        "validatedBy": {
+          "type": "string",
+          "description": "Nama supervisor yang memvalidasi",
+          "maxLength": 120
+        },
+        "validationNotes": {
+          "type": "string",
+          "description": "Catatan validasi atau revisi supervisor",
+          "maxLength": 2000
+        },
+        "completedAt": {
+          "type": "number",
+          "description": "Waktu selesai perbaikan"
+        },
+        "reportedAt": {
+          "type": "number",
+          "description": "Waktu pembuatan laporan memo"
+        }
+      },
+      "required": ["id", "memoNumber", "title", "category", "status", "reporterName", "reportedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Koleksi akun pengguna aplikasi"
+    },
+    "/repair_memos/{memoId}": {
+      "schema": { "$ref": "#/entities/RepairMemo" },
+      "description": "Koleksi memo perbaikan mesin Unit Offset"
+    }
+  }
+}
