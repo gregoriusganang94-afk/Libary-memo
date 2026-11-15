@@ -120,25 +120,25 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       <DateFilterBar value={dateFilter} onChange={onDateFilterChange} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+        <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Laporan</span>
           <p className="mt-1.5 text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono tabular-nums">
             {filteredMemos.length}
           </p>
         </div>
-        <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+        <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Tingkat Penyelesaian</span>
           <p className="mt-1.5 text-2xl font-bold text-emerald-700 dark:text-emerald-400 font-mono tabular-nums">
             {completionRate}%
           </p>
         </div>
-        <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+        <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Tervalidasi SPV</span>
           <p className="mt-1.5 text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono tabular-nums">
             {filteredMemos.filter((m) => m.status === 'Tervalidasi SPV').length}
           </p>
         </div>
-        <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+        <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Dalam Proses / Antre</span>
           <p className="mt-1.5 text-2xl font-bold text-amber-700 dark:text-amber-400 font-mono tabular-nums">
             {
@@ -153,7 +153,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
       </div>
 
-      <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 space-y-4">
+      <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 space-y-4">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
             <FileSpreadsheet className="w-5 h-5" />
@@ -262,7 +262,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             : 'grid grid-cols-1 gap-4'
         }
       >
-        <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+        <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60">
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               Rekap Berdasarkan Status
@@ -287,7 +287,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
 
         {showTechnicianWorkload && (
-          <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+          <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60">
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                 Beban Penanganan Teknisi

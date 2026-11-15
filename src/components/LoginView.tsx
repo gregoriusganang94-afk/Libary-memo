@@ -57,7 +57,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         <img
           src={PURA_LOGO_URL}
           alt=""
-          className="w-80 sm:w-[440px] md:w-[480px] max-w-[82vw] object-contain opacity-[0.22] dark:opacity-[0.20]"
+          className="w-80 sm:w-[440px] md:w-[480px] max-w-[82vw] object-contain opacity-[0.35]"
         />
       </div>
 
@@ -67,7 +67,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       </div>
 
       <main className="w-full max-w-md mx-auto my-6 relative z-10">
-        <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm">
+        <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm">
           <div className="flex flex-col items-center text-center mb-6">
             <div className="w-20 h-20 rounded-2xl bg-white border border-slate-200 dark:border-slate-700 p-2.5 flex items-center justify-center shadow-sm">
               <img
