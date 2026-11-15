@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Check, Copy, Download, Printer, QrCode, X } from 'lucide-react';
 import QRCode from 'qrcode';
+import { APP_VERSION, APP_YEAR } from '../lib/appInfo';
 import type { SessionUser } from '../types';
 import { PURA_LOGO_URL } from './SplashScreen';
 
@@ -118,7 +119,8 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({ user, onClose }) => {
 
     ctx.fillStyle = '#94A3B8';
     ctx.font = '14px monospace';
-    ctx.fillText('v1.0.0', 400, 990);
+    ctx.fillText(APP_VERSION, 400, 984);
+    ctx.fillText(APP_YEAR, 400, 1004);
 
     const link = document.createElement('a');
     link.download = 'qr-memo-perbaikan-pura-offset.png';

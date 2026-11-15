@@ -110,7 +110,7 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
 
       <DateFilterBar value={dateFilter} onChange={onDateFilterChange} compact />
 
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4 space-y-3">
+      <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="md:col-span-2 relative">
             <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -179,7 +179,7 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+      <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
         {loading ? (
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {[1, 2, 3, 4, 5].map((i) => (

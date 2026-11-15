@@ -175,7 +175,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({ currentUser }) => {
         </div>
       )}
 
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4">
+      <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4">
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
@@ -188,7 +188,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({ currentUser }) => {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+      <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
             Memuat daftar akun...

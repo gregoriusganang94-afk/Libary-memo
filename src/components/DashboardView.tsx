@@ -119,7 +119,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+            <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
               <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                 <span>Total Memo</span>
                 <ClipboardList className="w-4 h-4 text-slate-400 dark:text-slate-500" />
@@ -132,7 +132,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+            <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
               <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                 <span>Belum Selesai</span>
                 <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
@@ -145,7 +145,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+            <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
               <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                 <span>Tunggu Sparepart</span>
                 <PackageOpen className="w-4 h-4 text-orange-600 dark:text-orange-400" />
@@ -158,7 +158,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+            <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
               <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                 <span>Selesai & Valid</span>
                 <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -173,7 +173,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5">
+            <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5">
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-3">
                 Distribusi Kategori
               </h2>
@@ -201,7 +201,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5">
+            <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5">
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-3">
                 Rincian Status Alur
               </h2>
@@ -224,7 +224,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+          <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
             <div className="px-4 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                 Memo Terbaru pada Periode Ini

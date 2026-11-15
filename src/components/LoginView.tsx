@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, LogIn } from 'lucide-react';
 import type { ThemeMode } from '../hooks/useTheme';
+import { APP_VERSION, APP_YEAR } from '../lib/appInfo';
 import { authenticateUser } from '../services/firestoreService';
 import type { SessionUser } from '../types';
 import { PWAInstallButton, ThemeToggleButton } from './PWAControls';
@@ -48,14 +49,25 @@ export const LoginView: React.FC<LoginViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-between p-4 sm:p-6 transition-colors">
-      <div className="flex items-center justify-end max-w-5xl w-full mx-auto gap-2">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-between p-4 sm:p-6 transition-colors relative overflow-hidden">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none select-none fixed inset-0 z-0 flex items-center justify-center overflow-hidden"
+      >
+        <img
+          src={PURA_LOGO_URL}
+          alt=""
+          className="w-80 sm:w-[440px] md:w-[480px] max-w-[82vw] object-contain opacity-[0.22] dark:opacity-[0.20]"
+        />
+      </div>
+
+      <div className="flex items-center justify-end max-w-5xl w-full mx-auto gap-2 relative z-10">
         <ThemeToggleButton theme={theme} onToggle={onToggleTheme} />
         <PWAInstallButton compact />
       </div>
 
-      <main className="w-full max-w-md mx-auto my-6">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm">
+      <main className="w-full max-w-md mx-auto my-6 relative z-10">
+        <div className="bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm">
           <div className="flex flex-col items-center text-center mb-6">
             <div className="w-20 h-20 rounded-2xl bg-white border border-slate-200 dark:border-slate-700 p-2.5 flex items-center justify-center shadow-sm">
               <img
@@ -147,8 +159,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
         </div>
       </main>
 
-      <footer className="text-center text-xs text-slate-500 dark:text-slate-400 max-w-5xl w-full mx-auto">
-        Pura Group Unit Offset · v1.0.0 · GG
+      <footer className="text-center text-xs text-slate-500 dark:text-slate-400 max-w-5xl w-full mx-auto leading-tight space-y-0.5 relative z-10">
+        <div>Pura Group Unit Offset · {APP_VERSION} · GG</div>
+        <div className="text-[11px] font-mono text-slate-400 dark:text-slate-500">{APP_YEAR}</div>
       </footer>
     </div>
   );

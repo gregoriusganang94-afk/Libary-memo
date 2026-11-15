@@ -1,11 +1,50 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { execSync } from 'node:child_process';
 import path from 'path';
 import {defineConfig} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
 
+function resolveAppVersion(): string {
+  try {
+    const isShallow = execSync('git rev-parse --is-shallow-repository', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000,
+    }).trim();
+
+    if (isShallow === 'true' && (process.env.VERCEL || process.env.CI)) {
+      try {
+        execSync('git fetch --unshallow --quiet', {
+          stdio: 'ignore',
+          timeout: 3000,
+        });
+      } catch {
+        // Ignore if shallow repo cannot reach remote
+      }
+    }
+
+    const countStr = execSync('git rev-list --count HEAD', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000,
+    }).trim();
+
+    const commitCount = Number.parseInt(countStr, 10);
+    if (Number.isFinite(commitCount) && commitCount > 0) {
+      return `v1.0.${commitCount}`;
+    }
+  } catch {
+    // Fallback when .git folder is not present
+  }
+  return 'v1.0.0';
+}
+
 export default defineConfig(() => {
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(resolveAppVersion()),
+    },
     plugins: [
       react(),
       tailwindcss(),

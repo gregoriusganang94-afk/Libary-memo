@@ -28,6 +28,7 @@ import { QRCodeModal } from './components/QRCodeModal';
 import { ReportsView } from './components/ReportsView';
 import { PURA_LOGO_URL, SplashScreen } from './components/SplashScreen';
 import { useTheme } from './hooks/useTheme';
+import { APP_VERSION, APP_YEAR } from './lib/appInfo';
 import { testFirestoreConnection } from './lib/firebase';
 import {
   canAccessReports,
@@ -289,7 +290,19 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col md:flex-row transition-colors">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col md:flex-row transition-colors relative">
+      {/* Subtle Pura Group background watermark */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none select-none fixed inset-0 md:left-64 z-0 flex items-center justify-center overflow-hidden"
+      >
+        <img
+          src={PURA_LOGO_URL}
+          alt=""
+          className="w-80 sm:w-[440px] md:w-[480px] max-w-[82vw] object-contain opacity-[0.22] dark:opacity-[0.20]"
+        />
+      </div>
+
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-30">
         <div className="h-16 px-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 shrink-0">
@@ -374,13 +387,13 @@ export default function App() {
           </button>
 
           <p className="text-[11px] font-mono text-slate-400 dark:text-slate-500 text-center select-none">
-            v1.0.0
+            {APP_VERSION}
           </p>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 md:pl-64 flex flex-col min-h-screen">
+      <div className="flex-1 md:pl-64 flex flex-col min-h-screen relative z-10">
         <header className="sticky top-0 z-30 h-[56px] md:h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="md:hidden w-8 h-8 rounded-lg bg-white border border-slate-200 dark:border-slate-700 p-0.5 flex items-center justify-center shrink-0">
@@ -494,9 +507,14 @@ export default function App() {
             <AccountsView currentUser={user} />
           )}
 
-          <footer className="mt-8 pt-4 border-t border-slate-200/70 dark:border-slate-800/70 flex items-center justify-between text-[11px] font-mono text-slate-400 dark:text-slate-500 select-none">
-            <span>Sistem Menejemen Perbaikan Mesin · Unit Offset</span>
-            <span>v1.0.0 · GG</span>
+          <footer className="mt-8 pt-4 border-t border-slate-200/70 dark:border-slate-800/70 text-[11px] font-mono text-slate-400 dark:text-slate-500 select-none space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span>Sistem Menejemen Perbaikan Mesin · Unit Offset</span>
+              <span>{APP_VERSION} · GG</span>
+            </div>
+            <div className="text-center text-slate-400/80 dark:text-slate-600/90">
+              {APP_YEAR}
+            </div>
           </footer>
         </main>
       </div>

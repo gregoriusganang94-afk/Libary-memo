@@ -301,6 +301,10 @@ export function canChangeOwnPassword(user: SessionUser): boolean {
   return user.role !== 'TAMU';
 }
 
+export function canViewTechnicianWorkload(user: SessionUser): boolean {
+  return user.role === 'ADMIN' || user.role === 'SUPERVISOR';
+}
+
 export function filterMemosByRole(memos: RepairMemo[], _user: SessionUser): RepairMemo[] {
   return memos;
 }
