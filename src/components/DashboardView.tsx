@@ -86,12 +86,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
   }, [filteredMemos]);
 
-  const visibleCategories = useMemo(() => {
-    if (user.role === 'TEKNISI' && user.specialization) {
-      return [user.specialization];
-    }
-    return MEMO_CATEGORIES;
-  }, [user]);
+  const visibleCategories = MEMO_CATEGORIES;
 
   const recentMemos = useMemo(() => filteredMemos.slice(0, 6), [filteredMemos]);
 
@@ -100,11 +95,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-            Ringkasan Pemeliharaan
+            Ringkasan Perbaikan
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-            {user.role === 'TEKNISI' && user.specialization
-              ? `Menampilkan khusus memo bidang ${user.specialization} · ${user.fullName}`
+            {user.role === 'TEKNISI'
+              ? `${user.fullName} · TEKNISI${user.specialization ? ` (${user.specialization})` : ''} · Melihat semua memo`
               : `${user.fullName} · ${user.role} (Semua Kategori)`}
           </p>
         </div>

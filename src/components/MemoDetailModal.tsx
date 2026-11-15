@@ -522,6 +522,13 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
                 Memo ini sedang ditangani oleh <strong>{memo.technicianName}</strong>. Hanya akun teknisi tersebut dan Admin yang dapat memilih proses pengerjaan maupun mengisi form memo.
               </p>
             </div>
+          ) : user.role === 'TEKNISI' && !canClaim && !canWork ? (
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 bg-slate-50 dark:bg-slate-950 flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-300">
+              <Lock className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" />
+              <p>
+                Memo kategori <strong>{memo.category}</strong> hanya dapat diambil dan dikerjakan oleh Teknisi bidang <strong>{memo.category}</strong> (bidang Anda: {user.specialization || 'belum diatur'}).
+              </p>
+            </div>
           ) : null}
 
           {isWorkshop && (

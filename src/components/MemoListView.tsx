@@ -91,7 +91,7 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-0.5">
             {isTech && user.specialization
-              ? `Khusus bidang ${user.specialization} · Maks. 25 memo per halaman`
+              ? `Menampilkan semua memo (maks. 25/hal) · Total ${filteredMemos.length} memo · Bidang Anda: ${user.specialization}`
               : `Menampilkan maks. 25 memo per halaman · Total ${filteredMemos.length} memo`}
           </p>
         </div>
@@ -150,35 +150,33 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
           </div>
         </div>
 
-        {!isTech && (
-          <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg w-fit">
+        <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg w-fit">
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('ALL')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors min-h-[36px] ${
+              categoryFilter === 'ALL'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+            }`}
+          >
+            Semua Kategori
+          </button>
+          {MEMO_CATEGORIES.map((cat) => (
             <button
+              key={cat}
               type="button"
-              onClick={() => setCategoryFilter('ALL')}
+              onClick={() => setCategoryFilter(cat)}
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors min-h-[36px] ${
-                categoryFilter === 'ALL'
+                categoryFilter === cat
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
-              Semua Kategori
+              {cat}
             </button>
-            {MEMO_CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setCategoryFilter(cat)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors min-h-[36px] ${
-                  categoryFilter === cat
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-        )}
+          ))}
+        </div>
       </div>
 
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">

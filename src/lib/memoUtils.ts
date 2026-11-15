@@ -297,11 +297,11 @@ export function canAccessReports(user: SessionUser): boolean {
   return user.role !== 'PRODUKSI' && user.role !== 'TAMU';
 }
 
-export function filterMemosByRole(memos: RepairMemo[], user: SessionUser): RepairMemo[] {
-  if (user.role === 'TEKNISI') {
-    if (!user.specialization) return [];
-    return memos.filter((m) => m.category === user.specialization);
-  }
+export function canChangeOwnPassword(user: SessionUser): boolean {
+  return user.role !== 'TAMU';
+}
+
+export function filterMemosByRole(memos: RepairMemo[], _user: SessionUser): RepairMemo[] {
   return memos;
 }
 

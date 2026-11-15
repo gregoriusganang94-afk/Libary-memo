@@ -14,7 +14,7 @@ const ROLES: { value: UserRole; label: string; desc: string }[] = [
   { value: 'SUPERVISOR', label: 'SUPERVISOR', desc: 'Pantau semua memo, validasi akhir & revisi' },
   { value: 'TEKNISI', label: 'TEKNISI', desc: 'Tangani memo sesuai bidang keahlian' },
   { value: 'PRODUKSI', label: 'PRODUKSI', desc: 'Buat memo & hapus memo sendiri' },
-  { value: 'TAMU', label: 'TAMU', desc: 'Hanya lihat (read-only) Dashboard, Memo & Laporan' },
+  { value: 'TAMU', label: 'TAMU', desc: 'Hanya lihat (read-only) Dashboard & Memo' },
 ];
 
 interface AccountsViewProps {

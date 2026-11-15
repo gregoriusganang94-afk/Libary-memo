@@ -609,3 +609,77 @@ export async function deleteUserAccount(
     );
   }
 }
+
+export async function changeOwnPassword(
+  sessionUser: SessionUser,
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  if (sessionUser.role === 'TAMU') {
+    throw new Error('Akun Tamu tidak memiliki akses untuk mengubah password.');
+  }
+
+  const trimmedNew = newPassword.trim();
+  if (trimmedNew.length < 4) {
+    throw new Error('Password baru minimal 4 karakter.');
+  }
+
+  const candidateDocId = sessionUser._docId || sessionUser.userId;
+  let targetDocId: string | null = null;
+  let storedPassword = '';
+
+  try {
+    const directRef = doc(db, USERS_COLLECTION, candidateDocId);
+    let directSnap;
+    try {
+      directSnap = await withTransientRetry(() => getDocFromServer(directRef), 1, 700);
+    } catch {
+      directSnap = await getDoc(directRef);
+    }
+
+    if (directSnap.exists()) {
+      targetDocId = directSnap.id;
+      storedPassword = String((directSnap.data() as Record<string, unknown>).password ?? '');
+    } else {
+      const q = query(
+        collection(db, USERS_COLLECTION),
+        where('userId', '==', sessionUser.userId)
+      );
+      let snap: QuerySnapshot;
+      try {
+        snap = await withTransientRetry(() => getDocsFromServer(q), 1, 700);
+      } catch {
+        snap = await getDocs(q);
+      }
+      if (!snap.empty) {
+        targetDocId = snap.docs[0].id;
+        storedPassword = String((snap.docs[0].data() as Record<string, unknown>).password ?? '');
+      }
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, USERS_COLLECTION, sessionUser.userId);
+  }
+
+  if (!targetDocId) {
+    throw new Error('Data akun Anda tidak ditemukan di server.');
+  }
+
+  const { valid } = await verifyPassword(currentPassword, storedPassword);
+  if (!valid) {
+    throw new Error('Password lama tidak sesuai.');
+  }
+
+  const hashedPassword = await hashPassword(trimmedNew);
+  try {
+    await updateDoc(doc(db, USERS_COLLECTION, targetDocId), {
+      password: hashedPassword,
+    });
+  } catch (error) {
+    handleFirestoreError(
+      error,
+      OperationType.UPDATE,
+      `${USERS_COLLECTION}/${targetDocId}`,
+      sessionUser.userId
+    );
+  }
+}

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
   ClipboardList,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Plus,
@@ -12,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { AccountsView } from './components/AccountsView';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { CreateMemoModal } from './components/CreateMemoModal';
 import { DashboardView } from './components/DashboardView';
 import { LoginView } from './components/LoginView';
@@ -27,7 +29,12 @@ import { ReportsView } from './components/ReportsView';
 import { PURA_LOGO_URL, SplashScreen } from './components/SplashScreen';
 import { useTheme } from './hooks/useTheme';
 import { testFirestoreConnection } from './lib/firebase';
-import { canAccessReports, canCreateMemo, canManageUsers } from './lib/memoUtils';
+import {
+  canAccessReports,
+  canChangeOwnPassword,
+  canCreateMemo,
+  canManageUsers,
+} from './lib/memoUtils';
 import {
   fetchRepairMemosFromServer,
   refreshSessionUser,
@@ -77,6 +84,7 @@ export default function App() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
   // Brief branded startup splash screen while checking Firestore connection
   useEffect(() => {
@@ -207,6 +215,7 @@ export default function App() {
     setSelectedMemoId(null);
     setShowCreateModal(false);
     setShowProfileSheet(false);
+    setShowChangePasswordModal(false);
     try {
       localStorage.removeItem(SESSION_STORAGE_KEY);
     } catch {
@@ -234,6 +243,7 @@ export default function App() {
   const showAccountsTab = canManageUsers(user);
   const showReportsTab = canAccessReports(user);
   const showCreateAction = canCreateMemo(user);
+  const allowChangePassword = canChangeOwnPassword(user);
 
   const navItems: { id: AppView; label: string; icon: React.ReactNode }[] = [
     {
@@ -342,6 +352,17 @@ export default function App() {
                 : ''}
             </p>
           </div>
+
+          {allowChangePassword && (
+            <button
+              type="button"
+              onClick={() => setShowChangePasswordModal(true)}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors min-h-[40px]"
+            >
+              <KeyRound className="w-4 h-4 text-blue-700 dark:text-blue-400" />
+              <span>Ganti Password</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -559,6 +580,19 @@ export default function App() {
 
             <div className="flex flex-col gap-2.5">
               <PWAInstallButton />
+              {allowChangePassword && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowProfileSheet(false);
+                    setShowChangePasswordModal(true);
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 min-h-[44px]"
+                >
+                  <KeyRound className="w-4 h-4 text-blue-700 dark:text-blue-400" />
+                  <span>Ganti Password</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -601,6 +635,13 @@ export default function App() {
           user={user}
           memo={selectedMemo}
           onClose={() => setSelectedMemoId(null)}
+        />
+      )}
+
+      {showChangePasswordModal && allowChangePassword && (
+        <ChangePasswordModal
+          user={user}
+          onClose={() => setShowChangePasswordModal(false)}
         />
       )}
 
