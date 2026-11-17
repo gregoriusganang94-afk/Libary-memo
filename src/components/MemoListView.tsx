@@ -32,6 +32,7 @@ interface MemoListViewProps {
   memos: RepairMemo[];
   loading: boolean;
   dateFilter: DateFilterState;
+  isDateSearchOverride?: boolean;
   onDateFilterChange: (next: DateFilterState) => void;
   onSelectMemo: (memo: RepairMemo) => void;
   onOpenCreate: () => void;
@@ -42,6 +43,7 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
   memos,
   loading,
   dateFilter,
+  isDateSearchOverride = false,
   onDateFilterChange,
   onSelectMemo,
   onOpenCreate,
@@ -108,7 +110,12 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
         )}
       </div>
 
-      <DateFilterBar value={dateFilter} onChange={onDateFilterChange} compact />
+      <DateFilterBar
+        value={dateFilter}
+        onChange={onDateFilterChange}
+        compact
+        isDateSearchOverride={isDateSearchOverride}
+      />
 
       <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

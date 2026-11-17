@@ -1,4 +1,10 @@
-import type { AutoCleanupPolicy, DataLoadScope } from '../types';
+import type {
+  AutoCleanupPolicy,
+  DataLoadScope,
+  DateFilterState,
+  FetchRange,
+} from '../types';
+import { getDateRangeFromFilter } from './dateUtils';
 
 const CLEANUP_POLICY_KEY_PREFIX = 'pura_memo_admin_cleanup_v1_';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -110,6 +116,61 @@ export function resolveLoadScopeRange(scope: DataLoadScope): ResolvedLoadScopeRa
     startMs: null,
     endMs: null,
     label: 'Semua Data (Arsip Penuh)',
+  };
+}
+
+export function isRangeCoveredByLoadedRange(
+  target: { startMs: number | null; endMs: number | null },
+  loaded: { startMs: number | null; endMs: number | null }
+): boolean {
+  if (loaded.startMs === null) return true;
+  if (target.startMs === null) return false;
+  const startOk = target.startMs >= loaded.startMs;
+  const endOk =
+    loaded.endMs === null ||
+    (target.endMs !== null && target.endMs <= loaded.endMs);
+  return startOk && endOk;
+}
+
+export function resolveEffectiveFetchRange(
+  adminScope: DataLoadScope,
+  dateFilter: DateFilterState
+): FetchRange {
+  const adminRange = resolveLoadScopeRange(adminScope);
+
+  if (adminRange.startMs === null || dateFilter.preset === 'all') {
+    return {
+      startMs: adminRange.startMs,
+      endMs: adminRange.endMs,
+      label: adminRange.label,
+      isDateSearchOverride: false,
+    };
+  }
+
+  const filterRange = getDateRangeFromFilter(dateFilter);
+  if (filterRange.startMs === null) {
+    return {
+      startMs: adminRange.startMs,
+      endMs: adminRange.endMs,
+      label: adminRange.label,
+      isDateSearchOverride: false,
+    };
+  }
+
+  if (isRangeCoveredByLoadedRange(filterRange, adminRange)) {
+    return {
+      startMs: adminRange.startMs,
+      endMs: adminRange.endMs,
+      label: adminRange.label,
+      isDateSearchOverride: false,
+    };
+  }
+
+  return {
+    startMs: filterRange.startMs,
+    endMs: filterRange.endMs,
+    label: filterRange.label,
+    isDateSearchOverride: true,
   };
 }
 

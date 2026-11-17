@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Download, FileSpreadsheet } from 'lucide-react';
+import { isRangeCoveredByLoadedRange } from '../lib/cleanupPolicy';
 import {
   getDateRangeFromFilter,
   isTimestampInRange,
@@ -13,9 +14,11 @@ import {
   MEMO_CATEGORIES,
   MEMO_STATUSES,
 } from '../lib/memoUtils';
+import { fetchRepairMemosFromServer } from '../services/firestoreService';
 import type {
   DateFilterPreset,
   DateFilterState,
+  FetchRange,
   MemoCategory,
   RepairMemo,
   SessionUser,
@@ -28,6 +31,7 @@ interface ReportsViewProps {
   user: SessionUser;
   memos: RepairMemo[];
   dateFilter: DateFilterState;
+  effectiveFetchRange: FetchRange;
   onDateFilterChange: (next: DateFilterState) => void;
   onCleanupCompleted?: () => void;
 }
@@ -36,6 +40,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   user,
   memos,
   dateFilter,
+  effectiveFetchRange,
   onDateFilterChange,
   onCleanupCompleted,
 }) => {
@@ -95,6 +100,14 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }, [filteredMemos]);
 
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const exportNeedsServerFetch = useMemo(() => {
+    if (exportPreset === 'active') return false;
+    return !isRangeCoveredByLoadedRange(exportResolvedRange, effectiveFetchRange);
+  }, [exportPreset, exportResolvedRange, effectiveFetchRange]);
+
   const completionRate = useMemo(() => {
     if (filteredMemos.length === 0) return 0;
     const finished = filteredMemos.filter(
@@ -103,12 +116,45 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     return Math.round((finished / filteredMemos.length) * 100);
   }, [filteredMemos]);
 
-  const handleDownloadCsv = () => {
+  const handleDownloadCsv = async () => {
     const stamp = toLocalDateInputValue(new Date());
-    exportMemosToCsv(
-      exportMemos,
-      `rekap-memo-perbaikan-pura-offset-${stamp}.csv`
-    );
+    const filename = `rekap-memo-perbaikan-pura-offset-${stamp}.csv`;
+    setExportError(null);
+
+    if (!exportNeedsServerFetch) {
+      exportMemosToCsv(exportMemos, filename);
+      return;
+    }
+
+    setExportingCsv(true);
+    try {
+      const { memos: serverMemos } = await fetchRepairMemosFromServer(
+        {
+          startMs: exportResolvedRange.startMs,
+          endMs: exportResolvedRange.endMs,
+        },
+        user.userId,
+        false
+      );
+      const scoped = filterMemosByRole(serverMemos, user).filter((m) => {
+        if (!isTimestampInRange(m._reportedAtMs, exportResolvedRange)) return false;
+        if (exportCategory !== 'ALL' && m.category !== exportCategory) return false;
+        return true;
+      });
+      if (scoped.length === 0) {
+        setExportError('Tidak ada memo pada periode ekspor tersebut di server.');
+        return;
+      }
+      exportMemosToCsv(scoped, filename);
+    } catch (err) {
+      setExportError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal mengambil data periode tersebut dari server.'
+      );
+    } finally {
+      setExportingCsv(false);
+    }
   };
 
   return (
@@ -122,7 +168,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </p>
       </div>
 
-      <DateFilterBar value={dateFilter} onChange={onDateFilterChange} />
+      <DateFilterBar
+        value={dateFilter}
+        onChange={onDateFilterChange}
+        isDateSearchOverride={Boolean(effectiveFetchRange.isDateSearchOverride)}
+      />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
@@ -244,20 +294,38 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         )}
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <p className="text-xs text-slate-600 dark:text-slate-400 font-mono tabular-nums">
-            Periode ekspor: <strong>{exportResolvedRange.label}</strong> ·{' '}
-            <strong>{exportMemos.length}</strong> memo siap diekspor
-          </p>
+          <div className="space-y-0.5">
+            <p className="text-xs text-slate-600 dark:text-slate-400 font-mono tabular-nums">
+              Periode ekspor: <strong>{exportResolvedRange.label}</strong>
+              {!exportNeedsServerFetch && (
+                <>
+                  {' '}
+                  · <strong>{exportMemos.length}</strong> memo siap diekspor
+                </>
+              )}
+            </p>
+            {exportNeedsServerFetch && (
+              <p className="text-[11px] text-blue-700 dark:text-blue-400">
+                Data periode ini akan diambil langsung dari server saat tombol Unduh ditekan.
+              </p>
+            )}
+          </div>
           <button
             type="button"
-            disabled={exportMemos.length === 0}
+            disabled={exportingCsv || (!exportNeedsServerFetch && exportMemos.length === 0)}
             onClick={handleDownloadCsv}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 dark:bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-600 disabled:opacity-50 min-h-[44px]"
           >
             <Download className="w-4 h-4" />
-            <span>Unduh Rekap (.csv)</span>
+            <span>{exportingCsv ? 'Mengambil Data Server...' : 'Unduh Rekap (.csv)'}</span>
           </button>
         </div>
+
+        {exportError && (
+          <div className="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/60 px-3 py-2 text-xs font-medium text-amber-800 dark:text-amber-200">
+            {exportError}
+          </div>
+        )}
       </div>
 
       {showAdminCleanup && (

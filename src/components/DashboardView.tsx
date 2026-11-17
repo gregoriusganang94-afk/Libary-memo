@@ -19,6 +19,7 @@ interface DashboardViewProps {
   memos: RepairMemo[];
   loading: boolean;
   dateFilter: DateFilterState;
+  isDateSearchOverride?: boolean;
   onDateFilterChange: (next: DateFilterState) => void;
   onSelectMemo: (memo: RepairMemo) => void;
   onNavigateToMemos: () => void;
@@ -29,6 +30,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   memos,
   loading,
   dateFilter,
+  isDateSearchOverride = false,
   onDateFilterChange,
   onSelectMemo,
   onNavigateToMemos,
@@ -105,7 +107,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      <DateFilterBar value={dateFilter} onChange={onDateFilterChange} />
+      <DateFilterBar
+        value={dateFilter}
+        onChange={onDateFilterChange}
+        isDateSearchOverride={isDateSearchOverride}
+      />
 
       {loading ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

@@ -31,8 +31,8 @@ import { useTheme } from './hooks/useTheme';
 import { APP_VERSION, APP_YEAR } from './lib/appInfo';
 import {
   formatBytesIndo,
-  getDefaultDataLoadScope,
   loadAdminCleanupPolicy,
+  resolveEffectiveFetchRange,
   saveAdminCleanupPolicy,
   shouldRunScheduledCleanup,
 } from './lib/cleanupPolicy';
@@ -40,6 +40,7 @@ import { testFirestoreConnection } from './lib/firebase';
 import {
   canAccessReports,
   canChangeOwnPassword,
+  canControlServerLoadScope,
   canCreateMemo,
   canManageDataCleanup,
   canManageUsers,
@@ -48,13 +49,18 @@ import {
   deleteMemosInBatches,
   fetchOldMemosForCleanup,
   fetchRepairMemosFromServer,
+  loadCachedGlobalLoadScope,
   refreshSessionUser,
+  saveGlobalLoadScope,
+  subscribeGlobalLoadScope,
   subscribeRepairMemos,
+  type MemoQueryRange,
 } from './services/firestoreService';
 import type {
   AppView,
   DataLoadScope,
   DateFilterState,
+  GlobalLoadScopeState,
   RepairMemo,
   SessionUser,
 } from './types';
@@ -92,9 +98,14 @@ export default function App() {
     startDate: '',
     endDate: '',
   });
-  const [loadScope, setLoadScope] = useState<DataLoadScope>(() =>
-    getDefaultDataLoadScope()
+  const [globalScopeState, setGlobalScopeState] = useState<GlobalLoadScopeState>(() =>
+    loadCachedGlobalLoadScope()
   );
+  const [savingGlobalScope, setSavingGlobalScope] = useState(false);
+  const [globalScopeFeedback, setGlobalScopeFeedback] = useState<{
+    type: 'ok' | 'err';
+    text: string;
+  } | null>(null);
   const [cleanupBanner, setCleanupBanner] = useState<string | null>(null);
 
   const [selectedMemoId, setSelectedMemoId] = useState<string | null>(null);
@@ -102,6 +113,11 @@ export default function App() {
   const [showProfileSheet, setShowProfileSheet] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+
+  const effectiveFetchRange = useMemo(
+    () => resolveEffectiveFetchRange(globalScopeState.scope, dateFilter),
+    [globalScopeState.scope, dateFilter]
+  );
 
   // Brief branded startup splash screen while checking Firestore connection
   useEffect(() => {
@@ -118,13 +134,25 @@ export default function App() {
     };
   }, []);
 
+  // Subscribe to global server load scope controlled by Admin (applies to all devices)
+  useEffect(() => {
+    if (!user) return;
+    const unsub = subscribeGlobalLoadScope((nextState) => {
+      setGlobalScopeState(nextState);
+    });
+    return () => unsub();
+  }, [user?.userId]);
+
   const syncFromServer = useCallback(
-    async (uid?: string, scopeOverride?: DataLoadScope) => {
-      const targetScope = scopeOverride ?? loadScope;
+    async (uid?: string, rangeOverride?: MemoQueryRange) => {
+      const targetRange: MemoQueryRange = rangeOverride ?? {
+        startMs: effectiveFetchRange.startMs,
+        endMs: effectiveFetchRange.endMs,
+      };
       setSyncing(true);
       try {
         const { memos: freshMemos, fromCache } = await fetchRepairMemosFromServer(
-          targetScope,
+          targetRange,
           uid
         );
         setMemos(freshMemos);
@@ -139,8 +167,32 @@ export default function App() {
         setLoadingMemos(false);
       }
     },
-    [loadScope]
+    [effectiveFetchRange.startMs, effectiveFetchRange.endMs]
   );
+
+  const handleAdminGlobalScopeChange = async (nextScope: DataLoadScope) => {
+    if (!user || !canControlServerLoadScope(user)) return;
+    setGlobalScopeFeedback(null);
+    setGlobalScopeState({
+      scope: nextScope,
+      updatedAt: Date.now(),
+      updatedBy: user.fullName,
+    });
+    setSavingGlobalScope(true);
+    const res = await saveGlobalLoadScope(nextScope, user);
+    setSavingGlobalScope(false);
+    if (res.ok) {
+      setGlobalScopeFeedback({
+        type: 'ok',
+        text: 'Tersimpan ke server — semua perangkat lain akan memuat pengaturan ini saat dibuka.',
+      });
+    } else if (res.errorMessage) {
+      setGlobalScopeFeedback({
+        type: 'err',
+        text: res.errorMessage,
+      });
+    }
+  };
 
   // Re-validate stored session against Firestore server when online
   useEffect(() => {
@@ -171,7 +223,7 @@ export default function App() {
     };
   }, [user?.userId]);
 
-  // Subscribe to repair_memos with active load scope + force server fetch when account or scope changes
+  // Subscribe to repair_memos with effective fetch range (Admin global default OR date-search override)
   useEffect(() => {
     if (!user) {
       setMemos([]);
@@ -179,14 +231,18 @@ export default function App() {
       return;
     }
 
+    const activeRange: MemoQueryRange = {
+      startMs: effectiveFetchRange.startMs,
+      endMs: effectiveFetchRange.endMs,
+    };
+
     setLoadingMemos(true);
     setFirestoreError(null);
 
-    // Pull latest server documents immediately so switching accounts or load scopes never relies solely on stale cache
-    syncFromServer(user.userId, loadScope);
+    syncFromServer(user.userId, activeRange);
 
     const unsub = subscribeRepairMemos(
-      loadScope,
+      activeRange,
       (list, fromCache) => {
         setMemos(list);
         setIsFromCache(fromCache);
@@ -201,11 +257,11 @@ export default function App() {
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
-        syncFromServer(user.userId, loadScope);
+        syncFromServer(user.userId, activeRange);
       }
     };
     const handleOnline = () => {
-      syncFromServer(user.userId, loadScope);
+      syncFromServer(user.userId, activeRange);
     };
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('online', handleOnline);
@@ -215,7 +271,12 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('online', handleOnline);
     };
-  }, [user?.userId, loadScope, syncFromServer]);
+  }, [
+    user?.userId,
+    effectiveFetchRange.startMs,
+    effectiveFetchRange.endMs,
+    syncFromServer,
+  ]);
 
   // Scheduled Admin Auto-Cleanup (runs max once per 24h when enabled by Admin)
   useEffect(() => {
@@ -278,6 +339,8 @@ export default function App() {
   const handleLoginSuccess = (loggedInUser: SessionUser) => {
     setMemos([]);
     setLoadingMemos(true);
+    setDateFilter({ preset: 'all', startDate: '', endDate: '' });
+    setGlobalScopeFeedback(null);
     setUser(loggedInUser);
     setActiveView('dashboard');
     try {
@@ -292,6 +355,8 @@ export default function App() {
     setMemos([]);
     setSelectedMemoId(null);
     setCleanupBanner(null);
+    setGlobalScopeFeedback(null);
+    setDateFilter({ preset: 'all', startDate: '', endDate: '' });
     setShowCreateModal(false);
     setShowProfileSheet(false);
     setShowChangePasswordModal(false);
@@ -562,12 +627,14 @@ export default function App() {
             </div>
           )}
 
-          {effectiveView !== 'accounts' && (
+          {canControlServerLoadScope(user) && effectiveView !== 'accounts' && (
             <DataScopeBar
-              value={loadScope}
+              globalState={globalScopeState}
               loadedCount={memos.length}
               loading={loadingMemos}
-              onChange={setLoadScope}
+              saving={savingGlobalScope}
+              feedback={globalScopeFeedback}
+              onChange={handleAdminGlobalScopeChange}
             />
           )}
 
@@ -577,6 +644,7 @@ export default function App() {
               memos={memos}
               loading={loadingMemos}
               dateFilter={dateFilter}
+              isDateSearchOverride={Boolean(effectiveFetchRange.isDateSearchOverride)}
               onDateFilterChange={setDateFilter}
               onSelectMemo={(memo) => setSelectedMemoId(memo._docId)}
               onNavigateToMemos={() => setActiveView('memos')}
@@ -589,6 +657,7 @@ export default function App() {
               memos={memos}
               loading={loadingMemos}
               dateFilter={dateFilter}
+              isDateSearchOverride={Boolean(effectiveFetchRange.isDateSearchOverride)}
               onDateFilterChange={setDateFilter}
               onSelectMemo={(memo) => setSelectedMemoId(memo._docId)}
               onOpenCreate={() => setShowCreateModal(true)}
@@ -600,6 +669,7 @@ export default function App() {
               user={user}
               memos={memos}
               dateFilter={dateFilter}
+              effectiveFetchRange={effectiveFetchRange}
               onDateFilterChange={setDateFilter}
               onCleanupCompleted={() => syncFromServer(user.userId)}
             />

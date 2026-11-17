@@ -107,6 +107,19 @@ export interface DataLoadScope {
   monthValue: string; // YYYY-MM
 }
 
+export interface GlobalLoadScopeState {
+  scope: DataLoadScope;
+  updatedAt?: number;
+  updatedBy?: string;
+}
+
+export interface FetchRange {
+  startMs: number | null;
+  endMs: number | null;
+  label: string;
+  isDateSearchOverride?: boolean;
+}
+
 export interface AutoCleanupPolicy {
   enabled: boolean;
   retentionMonths: number;

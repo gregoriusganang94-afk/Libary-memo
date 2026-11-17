@@ -19,13 +19,16 @@ import {
 } from 'firebase/firestore';
 import {
   computeCutoffMsForMonthsAgo,
-  resolveLoadScopeRange,
+  getCurrentMonthInputValue,
+  getDefaultDataLoadScope,
 } from '../lib/cleanupPolicy';
 import { hashPassword, verifyPassword } from '../lib/crypto';
 import { detectTimestampFormat, parseFirestoreDate } from '../lib/dateUtils';
 import { db, handleFirestoreError, OperationType, withTransientRetry } from '../lib/firebase';
 import type {
   DataLoadScope,
+  DataLoadScopeMode,
+  GlobalLoadScopeState,
   MemoCategory,
   MemoStatus,
   RepairMemo,
@@ -37,6 +40,9 @@ import type {
 
 const USERS_COLLECTION = 'users';
 const MEMOS_COLLECTION = 'repair_memos';
+const SETTINGS_COLLECTION = 'app_settings';
+const GLOBAL_SCOPE_DOC_ID = 'server_load_scope';
+const GLOBAL_SCOPE_CACHE_KEY = 'pura_memo_global_scope_v1';
 
 function normalizeSpecialization(raw: unknown): MemoCategory | '' {
   const clean = String(raw ?? '').trim().toLowerCase();
@@ -330,20 +336,167 @@ const ACTIVE_MEMO_STATUSES: MemoStatus[] = [
   'Menunggu Sparepart',
 ];
 
-function buildScopedMemoQueries(scope: DataLoadScope): Query[] {
-  const memosRef = collection(db, MEMOS_COLLECTION);
-  const resolved = resolveLoadScopeRange(scope);
+const VALID_SCOPE_MODES: DataLoadScopeMode[] = ['1m', '3m', '6m', 'month', 'all'];
 
-  if (resolved.startMs === null) {
+function parseGlobalLoadScopeData(
+  raw: Record<string, unknown> | undefined
+): GlobalLoadScopeState {
+  const defaults = getDefaultDataLoadScope();
+  if (!raw) return { scope: defaults };
+
+  const modeRaw = String(raw.mode ?? '').trim() as DataLoadScopeMode;
+  const mode: DataLoadScopeMode = VALID_SCOPE_MODES.includes(modeRaw)
+    ? modeRaw
+    : defaults.mode;
+
+  const monthRaw = String(raw.monthValue ?? '').trim();
+  const monthValue = /^\d{4}-\d{2}$/.test(monthRaw)
+    ? monthRaw
+    : getCurrentMonthInputValue();
+
+  return {
+    scope: { mode, monthValue },
+    updatedAt:
+      typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
+        ? raw.updatedAt
+        : undefined,
+    updatedBy:
+      typeof raw.updatedBy === 'string' && raw.updatedBy.trim()
+        ? raw.updatedBy.trim()
+        : undefined,
+  };
+}
+
+export function loadCachedGlobalLoadScope(): GlobalLoadScopeState {
+  try {
+    const raw = localStorage.getItem(GLOBAL_SCOPE_CACHE_KEY);
+    if (!raw) return { scope: getDefaultDataLoadScope() };
+    return parseGlobalLoadScopeData(JSON.parse(raw) as Record<string, unknown>);
+  } catch {
+    return { scope: getDefaultDataLoadScope() };
+  }
+}
+
+function saveCachedGlobalLoadScope(state: GlobalLoadScopeState): void {
+  try {
+    localStorage.setItem(
+      GLOBAL_SCOPE_CACHE_KEY,
+      JSON.stringify({
+        mode: state.scope.mode,
+        monthValue: state.scope.monthValue,
+        updatedAt: state.updatedAt,
+        updatedBy: state.updatedBy,
+      })
+    );
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function subscribeGlobalLoadScope(
+  onUpdate: (state: GlobalLoadScopeState, fromServer: boolean) => void,
+  onSyncWarning?: (msg: string | null) => void
+): Unsubscribe {
+  const ref = doc(db, SETTINGS_COLLECTION, GLOBAL_SCOPE_DOC_ID);
+
+  // Also pull directly from server once on mount so stale cache doesn't linger
+  getDocFromServer(ref)
+    .then((snap) => {
+      if (snap.exists()) {
+        const parsed = parseGlobalLoadScopeData(
+          snap.data() as Record<string, unknown>
+        );
+        saveCachedGlobalLoadScope(parsed);
+        onUpdate(parsed, true);
+      }
+      onSyncWarning?.(null);
+    })
+    .catch(() => {
+      // Ignore transient offline or missing collection errors on initial read
+    });
+
+  return onSnapshot(
+    ref,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const parsed = parseGlobalLoadScopeData(
+          snapshot.data() as Record<string, unknown>
+        );
+        saveCachedGlobalLoadScope(parsed);
+        onUpdate(parsed, !snapshot.metadata.fromCache);
+      }
+      onSyncWarning?.(null);
+    },
+    (error) => {
+      console.warn('Sinkronisasi pengaturan muat server:', error);
+      const msg =
+        error instanceof Error ? error.message : String(error ?? '');
+      if (msg.toLowerCase().includes('permission')) {
+        onSyncWarning?.(
+          'Koleksi app_settings belum diizinkan oleh aturan Firestore. Menggunakan pengaturan default.'
+        );
+      }
+    }
+  );
+}
+
+export async function saveGlobalLoadScope(
+  scope: DataLoadScope,
+  user: SessionUser
+): Promise<{ ok: boolean; errorMessage?: string }> {
+  const payload = {
+    mode: scope.mode,
+    monthValue: scope.monthValue || getCurrentMonthInputValue(),
+    updatedAt: Date.now(),
+    updatedBy: user.fullName,
+    updatedById: user.userId,
+  };
+
+  saveCachedGlobalLoadScope({
+    scope: { mode: payload.mode, monthValue: payload.monthValue },
+    updatedAt: payload.updatedAt,
+    updatedBy: payload.updatedBy,
+  });
+
+  try {
+    await setDoc(doc(db, SETTINGS_COLLECTION, GLOBAL_SCOPE_DOC_ID), payload);
+    return { ok: true };
+  } catch (error) {
+    const rawMsg = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      errorMessage: rawMsg.toLowerCase().includes('permission')
+        ? 'Pengaturan hanya tersimpan di perangkat ini karena Firestore Rules belum mengizinkan tulis ke koleksi app_settings.'
+        : `Gagal menyimpan pengaturan global ke server: ${rawMsg}`,
+    };
+  }
+}
+
+export interface MemoQueryRange {
+  startMs: number | null;
+  endMs: number | null;
+}
+
+function buildScopedMemoQueries(
+  range: MemoQueryRange,
+  includeActiveMemos = true
+): Query[] {
+  const memosRef = collection(db, MEMOS_COLLECTION);
+
+  if (range.startMs === null) {
     return [memosRef];
   }
 
-  const { startMs, endMs } = resolved;
+  const { startMs, endMs } = range;
   const startTs = Timestamp.fromMillis(startMs);
   const startIso = new Date(startMs).toISOString();
 
-  const queries: Query[] = [
-    query(memosRef, where('status', 'in', ACTIVE_MEMO_STATUSES)),
+  const queries: Query[] = [];
+  if (includeActiveMemos) {
+    queries.push(query(memosRef, where('status', 'in', ACTIVE_MEMO_STATUSES)));
+  }
+
+  queries.push(
     endMs !== null
       ? query(
           memosRef,
@@ -364,8 +517,8 @@ function buildScopedMemoQueries(scope: DataLoadScope): Query[] {
           where('reportedAt', '>=', startIso),
           where('reportedAt', '<=', new Date(endMs).toISOString())
         )
-      : query(memosRef, where('reportedAt', '>=', startIso)),
-  ];
+      : query(memosRef, where('reportedAt', '>=', startIso))
+  );
 
   return queries;
 }
@@ -383,10 +536,11 @@ function mergeMemoMaps(buckets: Map<string, RepairMemo>[]): RepairMemo[] {
 }
 
 export async function fetchRepairMemosFromServer(
-  scope: DataLoadScope,
-  activeUserId?: string
+  range: MemoQueryRange,
+  activeUserId?: string,
+  includeActiveMemos = true
 ): Promise<{ memos: RepairMemo[]; fromCache: boolean }> {
-  const queries = buildScopedMemoQueries(scope);
+  const queries = buildScopedMemoQueries(range, includeActiveMemos);
   try {
     const snapshots = await withTransientRetry(
       () => Promise.all(queries.map((q) => getDocsFromServer(q))),
@@ -427,18 +581,17 @@ export async function fetchRepairMemosFromServer(
 }
 
 export function subscribeRepairMemos(
-  scope: DataLoadScope,
+  range: MemoQueryRange,
   onData: (memos: RepairMemo[], fromCache: boolean) => void,
   onError: (err: Error) => void,
   activeUserId?: string
 ): Unsubscribe {
-  const queries = buildScopedMemoQueries(scope);
+  const queries = buildScopedMemoQueries(range, true);
   const buckets: Map<string, RepairMemo>[] = queries.map(() => new Map());
   const cacheFlags: boolean[] = queries.map(() => false);
   const settled: boolean[] = queries.map(() => false);
 
   const emitMerged = () => {
-    // Wait until initial snapshot from every bucket arrives if possible, or emit as each settles
     const anyFromCache = cacheFlags.some(Boolean);
     onData(mergeMemoMaps(buckets), anyFromCache);
   };
