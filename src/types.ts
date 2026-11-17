@@ -99,3 +99,18 @@ export interface DateFilterState {
 }
 
 export type AppView = 'dashboard' | 'memos' | 'reports' | 'accounts';
+
+export type DataLoadScopeMode = '1m' | '3m' | '6m' | 'month' | 'all';
+
+export interface DataLoadScope {
+  mode: DataLoadScopeMode;
+  monthValue: string; // YYYY-MM
+}
+
+export interface AutoCleanupPolicy {
+  enabled: boolean;
+  retentionMonths: number;
+  onlyFinalized: boolean;
+  lastRunAtMs: number | null;
+  lastDeletedCount: number;
+}

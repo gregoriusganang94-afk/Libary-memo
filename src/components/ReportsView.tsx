@@ -6,6 +6,7 @@ import {
   toLocalDateInputValue,
 } from '../lib/dateUtils';
 import {
+  canManageDataCleanup,
   canViewTechnicianWorkload,
   exportMemosToCsv,
   filterMemosByRole,
@@ -19,6 +20,7 @@ import type {
   RepairMemo,
   SessionUser,
 } from '../types';
+import { AdminCleanupPanel } from './AdminCleanupPanel';
 import { DateFilterBar } from './DateFilterBar';
 import { StatusLabel } from './StatusLabel';
 
@@ -27,6 +29,7 @@ interface ReportsViewProps {
   memos: RepairMemo[];
   dateFilter: DateFilterState;
   onDateFilterChange: (next: DateFilterState) => void;
+  onCleanupCompleted?: () => void;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({
@@ -34,8 +37,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   memos,
   dateFilter,
   onDateFilterChange,
+  onCleanupCompleted,
 }) => {
   const showTechnicianWorkload = canViewTechnicianWorkload(user);
+  const showAdminCleanup = canManageDataCleanup(user);
   const roleScopedMemos = useMemo(() => filterMemosByRole(memos, user), [memos, user]);
   const resolvedRange = useMemo(() => getDateRangeFromFilter(dateFilter), [dateFilter]);
 
@@ -254,6 +259,13 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           </button>
         </div>
       </div>
+
+      {showAdminCleanup && (
+        <AdminCleanupPanel
+          user={user}
+          onCleanupCompleted={onCleanupCompleted ?? (() => {})}
+        />
+      )}
 
       <div
         className={

@@ -29,24 +29,36 @@ import { ReportsView } from './components/ReportsView';
 import { PURA_LOGO_URL, SplashScreen } from './components/SplashScreen';
 import { useTheme } from './hooks/useTheme';
 import { APP_VERSION, APP_YEAR } from './lib/appInfo';
+import {
+  formatBytesIndo,
+  getDefaultDataLoadScope,
+  loadAdminCleanupPolicy,
+  saveAdminCleanupPolicy,
+  shouldRunScheduledCleanup,
+} from './lib/cleanupPolicy';
 import { testFirestoreConnection } from './lib/firebase';
 import {
   canAccessReports,
   canChangeOwnPassword,
   canCreateMemo,
+  canManageDataCleanup,
   canManageUsers,
 } from './lib/memoUtils';
 import {
+  deleteMemosInBatches,
+  fetchOldMemosForCleanup,
   fetchRepairMemosFromServer,
   refreshSessionUser,
   subscribeRepairMemos,
 } from './services/firestoreService';
 import type {
   AppView,
+  DataLoadScope,
   DateFilterState,
   RepairMemo,
   SessionUser,
 } from './types';
+import { DataScopeBar } from './components/DataScopeBar';
 
 const SESSION_STORAGE_KEY = 'pura_memo_session_v1';
 
@@ -80,6 +92,10 @@ export default function App() {
     startDate: '',
     endDate: '',
   });
+  const [loadScope, setLoadScope] = useState<DataLoadScope>(() =>
+    getDefaultDataLoadScope()
+  );
+  const [cleanupBanner, setCleanupBanner] = useState<string | null>(null);
 
   const [selectedMemoId, setSelectedMemoId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -102,22 +118,29 @@ export default function App() {
     };
   }, []);
 
-  const syncFromServer = useCallback(async (uid?: string) => {
-    setSyncing(true);
-    try {
-      const { memos: freshMemos, fromCache } = await fetchRepairMemosFromServer(uid);
-      setMemos(freshMemos);
-      setIsFromCache(fromCache);
-      setFirestoreError(null);
-    } catch (err) {
-      setFirestoreError(
-        err instanceof Error ? err.message : 'Gagal menyinkronkan data server.'
-      );
-    } finally {
-      setSyncing(false);
-      setLoadingMemos(false);
-    }
-  }, []);
+  const syncFromServer = useCallback(
+    async (uid?: string, scopeOverride?: DataLoadScope) => {
+      const targetScope = scopeOverride ?? loadScope;
+      setSyncing(true);
+      try {
+        const { memos: freshMemos, fromCache } = await fetchRepairMemosFromServer(
+          targetScope,
+          uid
+        );
+        setMemos(freshMemos);
+        setIsFromCache(fromCache);
+        setFirestoreError(null);
+      } catch (err) {
+        setFirestoreError(
+          err instanceof Error ? err.message : 'Gagal menyinkronkan data server.'
+        );
+      } finally {
+        setSyncing(false);
+        setLoadingMemos(false);
+      }
+    },
+    [loadScope]
+  );
 
   // Re-validate stored session against Firestore server when online
   useEffect(() => {
@@ -148,7 +171,7 @@ export default function App() {
     };
   }, [user?.userId]);
 
-  // Subscribe to repair_memos + force immediate server fetch when account logs in or switches
+  // Subscribe to repair_memos with active load scope + force server fetch when account or scope changes
   useEffect(() => {
     if (!user) {
       setMemos([]);
@@ -159,10 +182,11 @@ export default function App() {
     setLoadingMemos(true);
     setFirestoreError(null);
 
-    // Pull latest server documents immediately so switching accounts never relies solely on stale IndexedDB cache
-    syncFromServer(user.userId);
+    // Pull latest server documents immediately so switching accounts or load scopes never relies solely on stale cache
+    syncFromServer(user.userId, loadScope);
 
     const unsub = subscribeRepairMemos(
+      loadScope,
       (list, fromCache) => {
         setMemos(list);
         setIsFromCache(fromCache);
@@ -177,11 +201,11 @@ export default function App() {
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
-        syncFromServer(user.userId);
+        syncFromServer(user.userId, loadScope);
       }
     };
     const handleOnline = () => {
-      syncFromServer(user.userId);
+      syncFromServer(user.userId, loadScope);
     };
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('online', handleOnline);
@@ -191,7 +215,60 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('online', handleOnline);
     };
-  }, [user?.userId, syncFromServer]);
+  }, [user?.userId, loadScope, syncFromServer]);
+
+  // Scheduled Admin Auto-Cleanup (runs max once per 24h when enabled by Admin)
+  useEffect(() => {
+    if (!user || !canManageDataCleanup(user)) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
+    const policy = loadAdminCleanupPolicy(user.userId);
+    if (!shouldRunScheduledCleanup(policy)) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const scan = await fetchOldMemosForCleanup(
+          policy.retentionMonths,
+          policy.onlyFinalized,
+          user.userId
+        );
+        if (cancelled) return;
+
+        if (scan.memos.length > 0) {
+          const deletedCount = await deleteMemosInBatches(
+            scan.memos.map((m) => m._docId),
+            user.userId
+          );
+          if (cancelled) return;
+
+          saveAdminCleanupPolicy(user.userId, {
+            ...policy,
+            lastRunAtMs: Date.now(),
+            lastDeletedCount: deletedCount,
+          });
+          setCleanupBanner(
+            `Hapus Otomatis Admin: ${deletedCount} memo lebih dari ${policy.retentionMonths} bulan lalu telah dibersihkan (${formatBytesIndo(
+              scan.estimatedBytes
+            )}).`
+          );
+          syncFromServer(user.userId);
+        } else {
+          saveAdminCleanupPolicy(user.userId, {
+            ...policy,
+            lastRunAtMs: Date.now(),
+            lastDeletedCount: 0,
+          });
+        }
+      } catch (err) {
+        console.warn('Pembersihan otomatis Admin tertunda:', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.userId, user?.role]);
 
   const selectedMemo = useMemo(
     () => memos.find((m) => m._docId === selectedMemoId) ?? null,
@@ -214,6 +291,7 @@ export default function App() {
     setUser(null);
     setMemos([]);
     setSelectedMemoId(null);
+    setCleanupBanner(null);
     setShowCreateModal(false);
     setShowProfileSheet(false);
     setShowChangePasswordModal(false);
@@ -470,6 +548,29 @@ export default function App() {
             </div>
           )}
 
+          {cleanupBanner && (
+            <div className="mb-4 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/60 px-4 py-2.5 flex items-center justify-between gap-3 text-xs text-emerald-800 dark:text-emerald-200">
+              <span>{cleanupBanner}</span>
+              <button
+                type="button"
+                onClick={() => setCleanupBanner(null)}
+                aria-label="Tutup pemberitahuan hapus otomatis"
+                className="font-bold underline shrink-0"
+              >
+                Tutup
+              </button>
+            </div>
+          )}
+
+          {effectiveView !== 'accounts' && (
+            <DataScopeBar
+              value={loadScope}
+              loadedCount={memos.length}
+              loading={loadingMemos}
+              onChange={setLoadScope}
+            />
+          )}
+
           {effectiveView === 'dashboard' && (
             <DashboardView
               user={user}
@@ -500,11 +601,15 @@ export default function App() {
               memos={memos}
               dateFilter={dateFilter}
               onDateFilterChange={setDateFilter}
+              onCleanupCompleted={() => syncFromServer(user.userId)}
             />
           )}
 
           {effectiveView === 'accounts' && showAccountsTab && (
-            <AccountsView currentUser={user} />
+            <AccountsView
+              currentUser={user}
+              onOpenCleanupSettings={() => setActiveView('reports')}
+            />
           )}
 
           <footer className="mt-8 pt-4 border-t border-slate-200/70 dark:border-slate-800/70 text-[11px] font-mono text-slate-400 dark:text-slate-500 select-none space-y-1.5">

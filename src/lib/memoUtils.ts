@@ -305,6 +305,10 @@ export function canViewTechnicianWorkload(user: SessionUser): boolean {
   return user.role === 'ADMIN' || user.role === 'SUPERVISOR';
 }
 
+export function canManageDataCleanup(user: SessionUser): boolean {
+  return user.role === 'ADMIN';
+}
+
 export function filterMemosByRole(memos: RepairMemo[], _user: SessionUser): RepairMemo[] {
   return memos;
 }

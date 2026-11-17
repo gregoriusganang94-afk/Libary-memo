@@ -12,13 +12,20 @@ import {
   Timestamp,
   updateDoc,
   where,
+  writeBatch,
+  type Query,
   type QuerySnapshot,
   type Unsubscribe,
 } from 'firebase/firestore';
+import {
+  computeCutoffMsForMonthsAgo,
+  resolveLoadScopeRange,
+} from '../lib/cleanupPolicy';
 import { hashPassword, verifyPassword } from '../lib/crypto';
 import { detectTimestampFormat, parseFirestoreDate } from '../lib/dateUtils';
 import { db, handleFirestoreError, OperationType, withTransientRetry } from '../lib/firebase';
 import type {
+  DataLoadScope,
   MemoCategory,
   MemoStatus,
   RepairMemo,
@@ -317,20 +324,102 @@ export async function refreshSessionUser(
   }
 }
 
+const ACTIVE_MEMO_STATUSES: MemoStatus[] = [
+  'Menunggu Pengerjaan',
+  'Dalam Pengerjaan',
+  'Menunggu Sparepart',
+];
+
+function buildScopedMemoQueries(scope: DataLoadScope): Query[] {
+  const memosRef = collection(db, MEMOS_COLLECTION);
+  const resolved = resolveLoadScopeRange(scope);
+
+  if (resolved.startMs === null) {
+    return [memosRef];
+  }
+
+  const { startMs, endMs } = resolved;
+  const startTs = Timestamp.fromMillis(startMs);
+  const startIso = new Date(startMs).toISOString();
+
+  const queries: Query[] = [
+    query(memosRef, where('status', 'in', ACTIVE_MEMO_STATUSES)),
+    endMs !== null
+      ? query(
+          memosRef,
+          where('reportedAt', '>=', startMs),
+          where('reportedAt', '<=', endMs)
+        )
+      : query(memosRef, where('reportedAt', '>=', startMs)),
+    endMs !== null
+      ? query(
+          memosRef,
+          where('reportedAt', '>=', startTs),
+          where('reportedAt', '<=', Timestamp.fromMillis(endMs))
+        )
+      : query(memosRef, where('reportedAt', '>=', startTs)),
+    endMs !== null
+      ? query(
+          memosRef,
+          where('reportedAt', '>=', startIso),
+          where('reportedAt', '<=', new Date(endMs).toISOString())
+        )
+      : query(memosRef, where('reportedAt', '>=', startIso)),
+  ];
+
+  return queries;
+}
+
+function mergeMemoMaps(buckets: Map<string, RepairMemo>[]): RepairMemo[] {
+  const merged = new Map<string, RepairMemo>();
+  for (const bucket of buckets) {
+    for (const [id, memo] of bucket.entries()) {
+      merged.set(id, memo);
+    }
+  }
+  const list = Array.from(merged.values());
+  list.sort((a, b) => b._reportedAtMs - a._reportedAtMs);
+  return list;
+}
+
 export async function fetchRepairMemosFromServer(
+  scope: DataLoadScope,
   activeUserId?: string
 ): Promise<{ memos: RepairMemo[]; fromCache: boolean }> {
+  const queries = buildScopedMemoQueries(scope);
   try {
-    const snap = await withTransientRetry(
-      () => getDocsFromServer(collection(db, MEMOS_COLLECTION)),
+    const snapshots = await withTransientRetry(
+      () => Promise.all(queries.map((q) => getDocsFromServer(q))),
       1,
       700
     );
-    return { memos: mapMemoSnapshot(snap), fromCache: false };
+    const merged = new Map<string, RepairMemo>();
+    for (const snap of snapshots) {
+      for (const d of snap.docs) {
+        merged.set(
+          d.id,
+          normalizeMemoDoc(d.id, d.data() as Record<string, unknown>)
+        );
+      }
+    }
+    const list = Array.from(merged.values());
+    list.sort((a, b) => b._reportedAtMs - a._reportedAtMs);
+    return { memos: list, fromCache: false };
   } catch (error) {
     try {
-      const cacheSnap = await getDocs(collection(db, MEMOS_COLLECTION));
-      return { memos: mapMemoSnapshot(cacheSnap), fromCache: true };
+      const cacheSnaps = await Promise.all(queries.map((q) => getDocs(q)));
+      const merged = new Map<string, RepairMemo>();
+      for (const snap of cacheSnaps) {
+        for (const d of snap.docs) {
+          merged.set(
+            d.id,
+            normalizeMemoDoc(d.id, d.data() as Record<string, unknown>)
+          );
+        }
+      }
+      const list = Array.from(merged.values());
+      list.sort((a, b) => b._reportedAtMs - a._reportedAtMs);
+      return { memos: list, fromCache: true };
     } catch {
       handleFirestoreError(error, OperationType.LIST, MEMOS_COLLECTION, activeUserId);
     }
@@ -338,24 +427,56 @@ export async function fetchRepairMemosFromServer(
 }
 
 export function subscribeRepairMemos(
+  scope: DataLoadScope,
   onData: (memos: RepairMemo[], fromCache: boolean) => void,
   onError: (err: Error) => void,
   activeUserId?: string
 ): Unsubscribe {
-  return onSnapshot(
-    collection(db, MEMOS_COLLECTION),
-    { includeMetadataChanges: true },
-    (snapshot) => {
-      onData(mapMemoSnapshot(snapshot), snapshot.metadata.fromCache);
-    },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, MEMOS_COLLECTION, activeUserId);
-      } catch (wrapped) {
-        onError(wrapped as Error);
+  const queries = buildScopedMemoQueries(scope);
+  const buckets: Map<string, RepairMemo>[] = queries.map(() => new Map());
+  const cacheFlags: boolean[] = queries.map(() => false);
+  const settled: boolean[] = queries.map(() => false);
+
+  const emitMerged = () => {
+    // Wait until initial snapshot from every bucket arrives if possible, or emit as each settles
+    const anyFromCache = cacheFlags.some(Boolean);
+    onData(mergeMemoMaps(buckets), anyFromCache);
+  };
+
+  const unsubs = queries.map((q, idx) =>
+    onSnapshot(
+      q,
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        const nextBucket = new Map<string, RepairMemo>();
+        for (const d of snapshot.docs) {
+          nextBucket.set(
+            d.id,
+            normalizeMemoDoc(d.id, d.data() as Record<string, unknown>)
+          );
+        }
+        buckets[idx] = nextBucket;
+        cacheFlags[idx] = snapshot.metadata.fromCache;
+        settled[idx] = true;
+        if (settled.every(Boolean) || idx === 0) {
+          emitMerged();
+        }
+      },
+      (error) => {
+        try {
+          handleFirestoreError(error, OperationType.LIST, MEMOS_COLLECTION, activeUserId);
+        } catch (wrapped) {
+          onError(wrapped as Error);
+        }
       }
-    }
+    )
   );
+
+  return () => {
+    for (const unsub of unsubs) {
+      unsub();
+    }
+  };
 }
 
 export function formatValueForSchema(
@@ -476,6 +597,107 @@ export async function deleteRepairMemo(
       `${MEMOS_COLLECTION}/${memoId}`,
       activeUserId
     );
+  }
+}
+
+function estimateMemoDocumentBytes(memo: RepairMemo): number {
+  return (
+    512 +
+    memo.title.length +
+    memo.description.length +
+    memo.notes.length +
+    memo.actionLogsJson.length +
+    memo.partsListJson.length +
+    memo.beforeImageUri.length +
+    memo.afterImageUri.length +
+    memo.validationNotes.length
+  );
+}
+
+export async function fetchOldMemosForCleanup(
+  retentionMonths: number,
+  onlyFinalized: boolean,
+  activeUserId: string
+): Promise<{
+  memos: RepairMemo[];
+  cutoffMs: number;
+  estimatedBytes: number;
+}> {
+  const cutoffMs = computeCutoffMsForMonthsAgo(retentionMonths);
+  const memosRef = collection(db, MEMOS_COLLECTION);
+  const queries: Query[] = [
+    query(memosRef, where('reportedAt', '<', cutoffMs)),
+    query(memosRef, where('reportedAt', '<', Timestamp.fromMillis(cutoffMs))),
+    query(memosRef, where('reportedAt', '<', new Date(cutoffMs).toISOString())),
+  ];
+
+  try {
+    const snapshots = await withTransientRetry(
+      () => Promise.all(queries.map((q) => getDocsFromServer(q))),
+      1,
+      700
+    );
+
+    const uniqueMap = new Map<string, RepairMemo>();
+    for (const snap of snapshots) {
+      for (const d of snap.docs) {
+        const normalized = normalizeMemoDoc(
+          d.id,
+          d.data() as Record<string, unknown>
+        );
+        // Guard: skip entries with missing/invalid timestamp, and verify real normalized ms < cutoffMs
+        if (normalized._reportedAtMs <= 0 || normalized._reportedAtMs >= cutoffMs) {
+          continue;
+        }
+        if (
+          onlyFinalized &&
+          normalized.status !== 'Selesai' &&
+          normalized.status !== 'Tervalidasi SPV' &&
+          normalized.status !== 'Dibatalkan'
+        ) {
+          continue;
+        }
+        uniqueMap.set(d.id, normalized);
+      }
+    }
+
+    const memos = Array.from(uniqueMap.values());
+    memos.sort((a, b) => a._reportedAtMs - b._reportedAtMs);
+
+    const estimatedBytes = memos.reduce(
+      (sum, m) => sum + estimateMemoDocumentBytes(m),
+      0
+    );
+
+    return { memos, cutoffMs, estimatedBytes };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, MEMOS_COLLECTION, activeUserId);
+  }
+}
+
+export async function deleteMemosInBatches(
+  memoIds: string[],
+  activeUserId: string,
+  onProgress?: (deleted: number, total: number) => void
+): Promise<number> {
+  if (memoIds.length === 0) return 0;
+  const CHUNK_SIZE = 400;
+  let deleted = 0;
+
+  try {
+    for (let i = 0; i < memoIds.length; i += CHUNK_SIZE) {
+      const chunk = memoIds.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const id of chunk) {
+        batch.delete(doc(db, MEMOS_COLLECTION, id));
+      }
+      await batch.commit();
+      deleted += chunk.length;
+      onProgress?.(deleted, memoIds.length);
+    }
+    return deleted;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, MEMOS_COLLECTION, activeUserId);
   }
 }
 
