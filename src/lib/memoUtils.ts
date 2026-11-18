@@ -82,6 +82,8 @@ export function parseActionLogs(raw: unknown): ActionLogEntry[] {
           'Petugas'
       ),
       actorUserId: obj.actorUserId ? String(obj.actorUserId) : undefined,
+      targetUserId: obj.targetUserId ? String(obj.targetUserId) : undefined,
+      targetName: obj.targetName ? String(obj.targetName) : undefined,
       role: obj.role ? String(obj.role) : undefined,
       action: String(obj.action ?? obj.type ?? obj.status ?? 'Tindakan'),
       note: String(
@@ -233,35 +235,86 @@ export function isMemoLockedByStatus(status: MemoStatus): boolean {
   );
 }
 
+export function parseTechnicianNames(raw?: string | null): string[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const part of String(raw).split(',')) {
+    const clean = part.trim();
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(clean);
+    }
+  }
+  return result;
+}
+
+export function formatTechnicianNames(names: string[]): string {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const raw of names) {
+    const clean = raw.trim();
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(clean);
+    }
+  }
+  return unique.join(', ');
+}
+
 export function isAssignedTechnician(
   user: SessionUser,
   memo: RepairMemo
 ): boolean {
   if (user.role !== 'TEKNISI') return false;
-  const techNameClean = memo.technicianName.trim().toLowerCase();
-  if (!techNameClean) return false;
+  const assignedList = parseTechnicianNames(memo.technicianName);
+  if (assignedList.length === 0) return false;
 
+  const userFullLower = user.fullName.trim().toLowerCase();
+  const userNameLower = user.username.trim().toLowerCase();
+  const assignedLowerSet = new Set(assignedList.map((n) => n.toLowerCase()));
+
+  // Build map of assigned name (lowercase) -> most recent explicit userId from actionLogs
   const logs = parseActionLogs(memo.actionLogsJson);
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const entry = logs[i];
-    if (
-      entry.action === 'Klaim Pengerjaan' &&
-      entry.actorUserId &&
-      entry.actor.trim().toLowerCase() === techNameClean
-    ) {
-      return entry.actorUserId === user.userId;
+  const nameToUserId = new Map<string, string>();
+  for (const entry of logs) {
+    if (entry.action === 'Klaim Pengerjaan' && entry.actorUserId) {
+      nameToUserId.set(entry.actor.trim().toLowerCase(), entry.actorUserId);
+    } else if (entry.action === 'Tambah Teknisi' && entry.targetName && entry.targetUserId) {
+      nameToUserId.set(entry.targetName.trim().toLowerCase(), entry.targetUserId);
+    } else if (entry.action === 'Lepas Teknisi' && entry.targetName) {
+      nameToUserId.delete(entry.targetName.trim().toLowerCase());
+    } else if (entry.action === 'Lepas Memo') {
+      nameToUserId.clear();
     }
   }
 
-  return (
-    techNameClean === user.fullName.trim().toLowerCase() ||
-    techNameClean === user.username.trim().toLowerCase()
-  );
+  for (const [lowerName, uid] of nameToUserId.entries()) {
+    if (assignedLowerSet.has(lowerName) && uid === user.userId) {
+      return true;
+    }
+  }
+
+  // Fallback by matching name (for memos claimed from Android APK or before userId logging)
+  for (const lowerName of assignedLowerSet) {
+    if (lowerName === userFullLower || lowerName === userNameLower) {
+      const boundUid = nameToUserId.get(lowerName);
+      if (!boundUid || boundUid === user.userId) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 export function canClaimMemo(user: SessionUser, memo: RepairMemo): boolean {
   if (isMemoLockedByStatus(memo.status)) return false;
-  if (memo.technicianName.trim()) return false;
+  if (parseTechnicianNames(memo.technicianName).length > 0) return false;
   if (user.role === 'ADMIN') return true;
   if (user.role === 'TEKNISI') {
     return Boolean(user.specialization && memo.category === user.specialization);
@@ -273,9 +326,6 @@ export function canWorkMemo(user: SessionUser, memo: RepairMemo): boolean {
   if (isMemoLockedByStatus(memo.status)) return false;
   if (user.role === 'ADMIN') return true;
   if (user.role === 'TEKNISI') {
-    if (!user.specialization || memo.category !== user.specialization) {
-      return false;
-    }
     return isAssignedTechnician(user, memo);
   }
   return false;

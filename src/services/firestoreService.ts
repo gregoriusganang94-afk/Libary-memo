@@ -854,6 +854,44 @@ export async function deleteMemosInBatches(
   }
 }
 
+export interface AssignableTechnician {
+  userId: string;
+  username: string;
+  fullName: string;
+  specialization: MemoCategory | '';
+}
+
+export async function fetchTechnicianAccounts(
+  activeUserId?: string
+): Promise<AssignableTechnician[]> {
+  try {
+    const q = query(
+      collection(db, USERS_COLLECTION),
+      where('role', '==', 'TEKNISI')
+    );
+    let snap: QuerySnapshot;
+    try {
+      snap = await withTransientRetry(() => getDocsFromServer(q), 1, 600);
+    } catch {
+      snap = await getDocs(q);
+    }
+
+    const list: AssignableTechnician[] = snap.docs.map((d) => {
+      const acc = normalizeUserDoc(d.id, d.data() as Record<string, unknown>);
+      return {
+        userId: acc.userId,
+        username: acc.username,
+        fullName: acc.fullName,
+        specialization: acc.specialization,
+      };
+    });
+    list.sort((a, b) => a.fullName.localeCompare(b.fullName, 'id'));
+    return list;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, USERS_COLLECTION, activeUserId);
+  }
+}
+
 // Users management (Admin)
 export function subscribeUsers(
   onData: (users: UserAccount[]) => void,

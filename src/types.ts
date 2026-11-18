@@ -34,6 +34,8 @@ export interface ActionLogEntry {
   timestamp: string;
   actor: string;
   actorUserId?: string;
+  targetUserId?: string;
+  targetName?: string;
   role?: string;
   action: string;
   note: string;

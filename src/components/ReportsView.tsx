@@ -13,6 +13,7 @@ import {
   filterMemosByRole,
   MEMO_CATEGORIES,
   MEMO_STATUSES,
+  parseTechnicianNames,
 } from '../lib/memoUtils';
 import { fetchRepairMemosFromServer } from '../services/firestoreService';
 import type {
@@ -89,13 +90,16 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const technicianStats = useMemo(() => {
     const map = new Map<string, { name: string; total: number; done: number }>();
     for (const m of filteredMemos) {
-      const name = m.technicianName?.trim() || 'Belum Ditugaskan';
-      const current = map.get(name) ?? { name, total: 0, done: 0 };
-      current.total++;
-      if (m.status === 'Selesai' || m.status === 'Tervalidasi SPV') {
-        current.done++;
+      const names = parseTechnicianNames(m.technicianName);
+      const list = names.length > 0 ? names : ['Belum Ditugaskan'];
+      for (const name of list) {
+        const current = map.get(name) ?? { name, total: 0, done: 0 };
+        current.total++;
+        if (m.status === 'Selesai' || m.status === 'Tervalidasi SPV') {
+          current.done++;
+        }
+        map.set(name, current);
       }
-      map.set(name, current);
     }
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }, [filteredMemos]);

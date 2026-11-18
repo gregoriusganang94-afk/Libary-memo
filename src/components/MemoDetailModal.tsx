@@ -11,6 +11,9 @@ import {
   ShieldCheck,
   Trash2,
   Unlock,
+  UserMinus,
+  UserPlus,
+  Users,
   Wrench,
   X,
   XCircle,
@@ -23,17 +26,21 @@ import {
   canValidateMemo,
   canWorkMemo,
   compressImageToDataUrl,
+  formatTechnicianNames,
   isMemoLockedByStatus,
   isRenderableImageUri,
   parseActionLogs,
   parsePartsList,
+  parseTechnicianNames,
   serializeActionLogs,
   serializePartsList,
 } from '../lib/memoUtils';
 import {
   deleteRepairMemo,
+  fetchTechnicianAccounts,
   formatValueForSchema,
   updateRepairMemo,
+  type AssignableTechnician,
 } from '../services/firestoreService';
 import type { ActionLogEntry, PartEntry, RepairMemo, SessionUser } from '../types';
 import { StatusLabel } from './StatusLabel';
@@ -80,17 +87,71 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
   const [showCompletionPopup, setShowCompletionPopup] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
+  const [technicianAccounts, setTechnicianAccounts] = useState<AssignableTechnician[]>([]);
+  const [loadingTechs, setLoadingTechs] = useState(false);
+  const [selectedAddTechId, setSelectedAddTechId] = useState('');
+  const [releaseNote, setReleaseNote] = useState('');
+  const [confirmReleaseMode, setConfirmReleaseMode] = useState<
+    'all' | { name: string } | null
+  >(null);
+
+  const assignedTechnicians = useMemo(
+    () => parseTechnicianNames(memo.technicianName),
+    [memo.technicianName]
+  );
+
+  const availableTechnicians = useMemo(() => {
+    const assignedLower = new Set(assignedTechnicians.map((n) => n.toLowerCase()));
+    const filtered = technicianAccounts.filter(
+      (t) =>
+        !assignedLower.has(t.fullName.trim().toLowerCase()) &&
+        !assignedLower.has(t.username.trim().toLowerCase())
+    );
+    // Prioritize technicians matching memo.category first
+    return filtered.sort((a, b) => {
+      const aMatch = a.specialization === memo.category ? 0 : 1;
+      const bMatch = b.specialization === memo.category ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+      return a.fullName.localeCompare(b.fullName, 'id');
+    });
+  }, [technicianAccounts, assignedTechnicians, memo.category]);
+
   useEffect(() => {
     setNotesInput(memo.notes);
     setValidationNotesInput(memo.validationNotes);
   }, [memo._docId, memo.notes, memo.validationNotes]);
 
-  const appendLog = (action: string, note: string): string => {
+  useEffect(() => {
+    if (!canWork || isLocked) return;
+    let cancelled = false;
+    setLoadingTechs(true);
+    fetchTechnicianAccounts(user.userId)
+      .then((list) => {
+        if (!cancelled) setTechnicianAccounts(list);
+      })
+      .catch((err) => {
+        console.warn('Gagal memuat daftar teknisi:', err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTechs(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canWork, isLocked, user.userId]);
+
+  const appendLog = (
+    action: string,
+    note: string,
+    extra?: { targetUserId?: string; targetName?: string }
+  ): string => {
     const entry: ActionLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
       actor: user.fullName,
       actorUserId: user.userId,
+      targetUserId: extra?.targetUserId,
+      targetName: extra?.targetName,
       role: user.role,
       action,
       note,
@@ -194,6 +255,117 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
       },
       'Memo berhasil dibuka kembali. Catatan dan suku cadang kini dapat diedit.'
     );
+  };
+
+  const handleAddTechnician = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetTech = technicianAccounts.find((t) => t.userId === selectedAddTechId);
+    if (!targetTech) return;
+
+    const nextTechString = formatTechnicianNames([
+      ...assignedTechnicians,
+      targetTech.fullName,
+    ]);
+    if (nextTechString.length > 120) {
+      setFeedback({
+        type: 'err',
+        text: 'Batas maksimal panjang daftar nama teknisi (120 karakter) tercapai.',
+      });
+      return;
+    }
+
+    const nextStatus =
+      memo.status === 'Menunggu Pengerjaan' ? 'Dalam Pengerjaan' : memo.status;
+    const specText = targetTech.specialization
+      ? ` (${targetTech.specialization})`
+      : '';
+    const ok = await runUpdate(
+      {
+        technicianName: nextTechString,
+        status: nextStatus,
+        actionLogsJson: appendLog(
+          'Tambah Teknisi',
+          `${user.fullName} menambahkan ${targetTech.fullName}${specText} ke penanganan memo.`,
+          { targetUserId: targetTech.userId, targetName: targetTech.fullName }
+        ),
+      },
+      `${targetTech.fullName} ditambahkan ke penanganan memo.`
+    );
+    if (ok) {
+      setSelectedAddTechId('');
+    }
+  };
+
+  const handleConfirmRelease = async () => {
+    if (!confirmReleaseMode) return;
+    const reason = releaseNote.trim();
+
+    if (confirmReleaseMode === 'all') {
+      const ok = await runUpdate(
+        {
+          technicianName: '',
+          status: 'Menunggu Pengerjaan',
+          actionLogsJson: appendLog(
+            'Lepas Memo',
+            reason
+              ? `${user.fullName} melepas penanganan memo (${reason}). Status kembali ke Menunggu Pengerjaan.`
+              : `${user.fullName} melepas penanganan memo. Status kembali ke Menunggu Pengerjaan.`
+          ),
+        },
+        'Memo berhasil dilepas. Status kembali ke Menunggu Pengerjaan untuk dikerjakan teknisi lain.'
+      );
+      if (ok) {
+        setConfirmReleaseMode(null);
+        setReleaseNote('');
+      }
+      return;
+    }
+
+    const targetName = confirmReleaseMode.name;
+    const remaining = assignedTechnicians.filter(
+      (n) => n.toLowerCase() !== targetName.toLowerCase()
+    );
+
+    if (remaining.length === 0) {
+      const ok = await runUpdate(
+        {
+          technicianName: '',
+          status: 'Menunggu Pengerjaan',
+          actionLogsJson: appendLog(
+            'Lepas Memo',
+            reason
+              ? `${user.fullName} melepas ${targetName} dari memo (${reason}). Status kembali ke Menunggu Pengerjaan.`
+              : `${user.fullName} melepas ${targetName} dari memo. Status kembali ke Menunggu Pengerjaan.`,
+            { targetName }
+          ),
+        },
+        'Memo berhasil dilepas dan kembali ke antrean Menunggu Pengerjaan.'
+      );
+      if (ok) {
+        setConfirmReleaseMode(null);
+        setReleaseNote('');
+      }
+      return;
+    }
+
+    const nextTechString = formatTechnicianNames(remaining);
+    const ok = await runUpdate(
+      {
+        technicianName: nextTechString,
+        actionLogsJson: appendLog(
+          'Lepas Teknisi',
+          reason
+            ? `${user.fullName} melepas ${targetName} dari penanganan memo (${reason}).`
+            : `${user.fullName} melepas ${targetName} dari penanganan memo.`,
+          { targetName }
+        ),
+      },
+      `${targetName} dilepas dari memo. Penanganan dilanjutkan oleh ${nextTechString}.`
+    );
+    if (ok) {
+      setConfirmReleaseMode(null);
+      setReleaseNote('');
+    }
   };
 
   const handleValidateSpv = () => {
@@ -408,7 +580,9 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
             <div>
               <span className="text-slate-500 dark:text-slate-400 block">Teknisi Penanggung Jawab</span>
               <span className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5 block">
-                {memo.technicianName || 'Belum diklaim'}
+                {assignedTechnicians.length > 0
+                  ? assignedTechnicians.join(', ')
+                  : 'Belum diklaim'}
               </span>
             </div>
             <div>
@@ -508,10 +682,138 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
                     <span>Selesaikan Perbaikan</span>
                   </button>
                 )}
+
+                {canWork && assignedTechnicians.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => {
+                      setConfirmReleaseMode('all');
+                      setReleaseNote('');
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 dark:border-rose-800 bg-white dark:bg-slate-900 px-3.5 py-2 text-xs font-semibold text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 disabled:opacity-60 min-h-[42px]"
+                  >
+                    <UserMinus className="w-4 h-4" />
+                    <span>Lepas Memo</span>
+                  </button>
+                )}
               </div>
+
+              {confirmReleaseMode && (
+                <div className="rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50/90 dark:bg-rose-950/50 p-3.5 space-y-2.5">
+                  <p className="text-xs font-semibold text-rose-900 dark:text-rose-200">
+                    {confirmReleaseMode === 'all'
+                      ? 'Yakin melepas penanganan memo ini? Status akan kembali ke Menunggu Pengerjaan agar bisa diambil teknisi lain (catatan & suku cadang tetap tersimpan).'
+                      : assignedTechnicians.length <= 1
+                      ? `Lepas ${confirmReleaseMode.name} dari memo ini? Karena tidak ada teknisi tersisa, status memo akan kembali ke Menunggu Pengerjaan.`
+                      : `Lepas ${confirmReleaseMode.name} dari penanganan memo ini? Teknisi lainnya akan tetap melanjutkan pengerjaan.`}
+                  </p>
+                  <input
+                    type="text"
+                    value={releaseNote}
+                    onChange={(e) => setReleaseNote(e.target.value)}
+                    placeholder="Alasan pindah tugas / pengalihan (opsional)..."
+                    className="w-full rounded-lg border border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-950 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 min-h-[38px]"
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={handleConfirmRelease}
+                      className="rounded-lg bg-rose-700 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-rose-800 disabled:opacity-60 min-h-[38px]"
+                    >
+                      {saving ? 'Memproses...' : 'Ya, Lepas'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => {
+                        setConfirmReleaseMode(null);
+                        setReleaseNote('');
+                      }}
+                      className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 min-h-[38px]"
+                    >
+                      Batal
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {canWork && (
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <Users className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
+                    <span>
+                      Tim Teknisi Penanganan ({assignedTechnicians.length})
+                    </span>
+                  </div>
+
+                  {assignedTechnicians.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {assignedTechnicians.map((techName) => (
+                        <div
+                          key={techName}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200"
+                        >
+                          <span>{techName}</span>
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => {
+                              setConfirmReleaseMode({ name: techName });
+                              setReleaseNote('');
+                            }}
+                            title={`Lepas ${techName} dari memo ini`}
+                            aria-label={`Lepas ${techName} dari memo ini`}
+                            className="text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 p-0.5 transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <form
+                    onSubmit={handleAddTechnician}
+                    className="flex flex-col sm:flex-row gap-2"
+                  >
+                    <select
+                      aria-label="Pilih teknisi tambahan"
+                      value={selectedAddTechId}
+                      onChange={(e) => setSelectedAddTechId(e.target.value)}
+                      disabled={saving || loadingTechs || availableTechnicians.length === 0}
+                      className="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 min-h-[40px]"
+                    >
+                      <option value="">
+                        {loadingTechs
+                          ? 'Memuat daftar teknisi...'
+                          : availableTechnicians.length === 0
+                          ? 'Semua teknisi sudah terdaftar'
+                          : '+ Pilih teknisi untuk ditambahkan...'}
+                      </option>
+                      {availableTechnicians.map((t) => (
+                        <option key={t.userId} value={t.userId}>
+                          {t.fullName}
+                          {t.specialization ? ` — Bidang ${t.specialization}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={saving || !selectedAddTechId}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 min-h-[40px] shrink-0"
+                    >
+                      <UserPlus className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
+                      <span>Tambah Teknisi</span>
+                    </button>
+                  </form>
+                </div>
+              )}
+
               {canClaim && !canWork && user.role === 'TEKNISI' && (
                 <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Ketuk <strong>Klaim & Kerjakan</strong> untuk mengambil memo ini dan membuka pengisian form catatan serta suku cadang.
+                  Ketuk <strong>Klaim & Kerjakan</strong> untuk mengambil memo ini dan membuka pengisian form catatan, tambah rekan teknisi, serta suku cadang.
                 </p>
               )}
             </div>
