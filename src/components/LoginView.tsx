@@ -156,6 +156,20 @@ export const LoginView: React.FC<LoginViewProps> = ({
               <span>{loading ? 'Memverifikasi...' : 'Masuk ke Aplikasi'}</span>
             </button>
           </form>
+
+          <div className="mt-5 pt-4 border-t border-slate-200/80 dark:border-slate-800 text-center">
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Tidak punya akun? Login dengan user{' '}
+              <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                tamu
+              </span>{' '}
+              dan password{' '}
+              <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                tamu
+              </span>{' '}
+              untuk login ke sistem.
+            </p>
+          </div>
         </div>
       </main>
 

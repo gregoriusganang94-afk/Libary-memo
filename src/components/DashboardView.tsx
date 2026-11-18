@@ -1,15 +1,23 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
   ClipboardList,
   Clock,
+  MapPin,
   PackageOpen,
   ShieldCheck,
   Wrench,
 } from 'lucide-react';
 import { formatDateIndo, getDateRangeFromFilter, isTimestampInRange } from '../lib/dateUtils';
-import { filterMemosByRole, MEMO_CATEGORIES, MEMO_STATUSES } from '../lib/memoUtils';
+import {
+  filterMemosByRole,
+  isMemoLockedByStatus,
+  MEMO_CATEGORIES,
+  MEMO_LOCATIONS,
+  MEMO_STATUSES,
+  normalizeMemoLocation,
+} from '../lib/memoUtils';
 import type { DateFilterState, RepairMemo, SessionUser } from '../types';
 import { DateFilterBar } from './DateFilterBar';
 import { StatusLabel } from './StatusLabel';
@@ -23,6 +31,7 @@ interface DashboardViewProps {
   onDateFilterChange: (next: DateFilterState) => void;
   onSelectMemo: (memo: RepairMemo) => void;
   onNavigateToMemos: () => void;
+  onSelectLocation?: (location: string, onlyToday: boolean) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -34,15 +43,74 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onDateFilterChange,
   onSelectMemo,
   onNavigateToMemos,
+  onSelectLocation,
 }) => {
+  const [locationMode, setLocationMode] = useState<'today' | 'filter'>('today');
+
+  useEffect(() => {
+    if (dateFilter.preset === 'all' || dateFilter.preset === 'today') {
+      setLocationMode('today');
+    } else {
+      setLocationMode('filter');
+    }
+  }, [dateFilter.preset]);
+
   const roleScopedMemos = useMemo(() => filterMemosByRole(memos, user), [memos, user]);
   const resolvedRange = useMemo(() => getDateRangeFromFilter(dateFilter), [dateFilter]);
+  const todayRange = useMemo(
+    () => getDateRangeFromFilter({ preset: 'today', startDate: '', endDate: '' }),
+    []
+  );
 
   const filteredMemos = useMemo(() => {
     return roleScopedMemos.filter((m) =>
       isTimestampInRange(m._reportedAtMs, resolvedRange)
     );
   }, [roleScopedMemos, resolvedRange]);
+
+  const todayMemos = useMemo(() => {
+    return roleScopedMemos.filter((m) =>
+      isTimestampInRange(m._reportedAtMs, todayRange)
+    );
+  }, [roleScopedMemos, todayRange]);
+
+  const locationSummary = useMemo(() => {
+    const sourceMemos = locationMode === 'today' ? todayMemos : filteredMemos;
+    const countMap = new Map<string, { total: number; active: number }>();
+
+    for (const memo of sourceMemos) {
+      const loc = normalizeMemoLocation(memo.location);
+      const entry = countMap.get(loc) ?? { total: 0, active: 0 };
+      entry.total += 1;
+      if (!isMemoLockedByStatus(memo.status)) {
+        entry.active += 1;
+      }
+      countMap.set(loc, entry);
+    }
+
+    const orderIndex = new Map(MEMO_LOCATIONS.map((loc, idx) => [loc, idx]));
+
+    const rows = Array.from(countMap.entries())
+      .filter(([, counts]) => counts.total > 0)
+      .map(([location, counts]) => ({
+        location,
+        total: counts.total,
+        active: counts.active,
+      }))
+      .sort((a, b) => {
+        if (b.total !== a.total) return b.total - a.total;
+        const idxA = orderIndex.get(a.location) ?? 999;
+        const idxB = orderIndex.get(b.location) ?? 999;
+        if (idxA !== idxB) return idxA - idxB;
+        return a.location.localeCompare(b.location, 'id');
+      });
+
+    return {
+      totalMemos: sourceMemos.length,
+      activeLocations: rows.length,
+      rows,
+    };
+  }, [locationMode, todayMemos, filteredMemos]);
 
   const stats = useMemo(() => {
     let waiting = 0;
@@ -228,6 +296,80 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 })}
               </div>
             </div>
+          </div>
+
+          <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3.5">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-blue-700 dark:text-blue-400 shrink-0" />
+                  <span>Jumlah Memo per Lokasi Mesin</span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+                  {locationSummary.totalMemos > 0
+                    ? `${locationSummary.totalMemos} memo di ${locationSummary.activeLocations} lokasi (${
+                        locationMode === 'today' ? 'Hari Ini' : resolvedRange.label
+                      }) · Ketuk lokasi untuk melihat daftar`
+                    : `Belum ada memo pada ${
+                        locationMode === 'today' ? 'hari ini' : resolvedRange.label
+                      }`}
+                </p>
+              </div>
+
+              <div className="inline-flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-lg self-start sm:self-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setLocationMode('today')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors min-h-[34px] ${
+                    locationMode === 'today'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  Hari Ini ({todayMemos.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLocationMode('filter')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors min-h-[34px] ${
+                    locationMode === 'filter'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  Sesuai Filter ({filteredMemos.length})
+                </button>
+              </div>
+            </div>
+
+            {locationSummary.rows.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-800 px-4 py-5 text-center text-xs text-slate-500 dark:text-slate-400">
+                Belum ada memo pada {locationMode === 'today' ? 'hari ini' : resolvedRange.label}.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                {locationSummary.rows.map((row) => (
+                  <button
+                    key={row.location}
+                    type="button"
+                    onClick={() => onSelectLocation?.(row.location, locationMode === 'today')}
+                    className="text-left rounded-lg border border-blue-200 dark:border-blue-800/80 bg-blue-50/70 dark:bg-blue-950/30 hover:bg-blue-100/70 dark:hover:bg-blue-900/40 p-3 transition-colors min-h-[72px] flex flex-col justify-between"
+                  >
+                    <div className="flex items-start justify-between gap-2 w-full">
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                        {row.location}
+                      </span>
+                      <span className="font-mono text-lg font-bold leading-none tabular-nums shrink-0 text-blue-700 dark:text-blue-400">
+                        {row.total}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 truncate tabular-nums">
+                      {row.active > 0 ? `${row.active} belum selesai` : 'Semua selesai'}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">

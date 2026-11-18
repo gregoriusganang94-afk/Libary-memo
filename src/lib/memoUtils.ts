@@ -24,6 +24,16 @@ export const MEMO_LOCATIONS: string[] = [
   'Kantor',
 ];
 
+const LOCATION_CANONICAL_MAP = new Map<string, string>(
+  MEMO_LOCATIONS.map((loc) => [loc.toLowerCase(), loc])
+);
+
+export function normalizeMemoLocation(raw?: string | null): string {
+  const clean = (raw ?? '').trim();
+  if (!clean) return 'Lainnya';
+  return LOCATION_CANONICAL_MAP.get(clean.toLowerCase()) ?? clean;
+}
+
 export const MEMO_STATUSES: MemoStatus[] = [
   'Menunggu Pengerjaan',
   'Dalam Pengerjaan',

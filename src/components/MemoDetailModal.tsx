@@ -516,8 +516,8 @@ export const MemoDetailModal: React.FC<MemoDetailModalProps> = ({
     Boolean(memo.afterImageUri);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/65 p-0 sm:p-4">
-      <div className="w-full sm:max-w-3xl bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl max-h-[94vh] flex flex-col">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/65 p-3 sm:p-4">
+      <div className="w-full sm:max-w-3xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl max-h-[86dvh] sm:max-h-[90dvh] flex flex-col">
         <div className="px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 dark:text-slate-400">

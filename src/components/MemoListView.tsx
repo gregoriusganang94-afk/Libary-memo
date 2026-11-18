@@ -13,7 +13,9 @@ import {
   canCreateMemo,
   filterMemosByRole,
   MEMO_CATEGORIES,
+  MEMO_LOCATIONS,
   MEMO_STATUSES,
+  normalizeMemoLocation,
 } from '../lib/memoUtils';
 import type {
   DateFilterState,
@@ -33,6 +35,8 @@ interface MemoListViewProps {
   loading: boolean;
   dateFilter: DateFilterState;
   isDateSearchOverride?: boolean;
+  locationFilter?: string;
+  onLocationFilterChange?: (next: string) => void;
   onDateFilterChange: (next: DateFilterState) => void;
   onSelectMemo: (memo: RepairMemo) => void;
   onOpenCreate: () => void;
@@ -44,6 +48,8 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
   loading,
   dateFilter,
   isDateSearchOverride = false,
+  locationFilter: controlledLocationFilter,
+  onLocationFilterChange,
   onDateFilterChange,
   onSelectMemo,
   onOpenCreate,
@@ -51,10 +57,26 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<MemoStatus | 'ALL'>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<MemoCategory | 'ALL'>('ALL');
+  const [internalLocationFilter, setInternalLocationFilter] = useState<string>('ALL');
   const [page, setPage] = useState(1);
+
+  const locationFilter = controlledLocationFilter ?? internalLocationFilter;
+  const handleLocationChange = (next: string) => {
+    setInternalLocationFilter(next);
+    onLocationFilterChange?.(next);
+  };
 
   const roleScopedMemos = useMemo(() => filterMemosByRole(memos, user), [memos, user]);
   const resolvedRange = useMemo(() => getDateRangeFromFilter(dateFilter), [dateFilter]);
+
+  const locationOptions = useMemo(() => {
+    const set = new Set<string>(MEMO_LOCATIONS);
+    for (const m of roleScopedMemos) {
+      const normalized = normalizeMemoLocation(m.location);
+      if (normalized) set.add(normalized);
+    }
+    return Array.from(set);
+  }, [roleScopedMemos]);
 
   const filteredMemos = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -62,16 +84,19 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
       if (!isTimestampInRange(m._reportedAtMs, resolvedRange)) return false;
       if (statusFilter !== 'ALL' && m.status !== statusFilter) return false;
       if (categoryFilter !== 'ALL' && m.category !== categoryFilter) return false;
+      if (locationFilter !== 'ALL' && normalizeMemoLocation(m.location) !== locationFilter) {
+        return false;
+      }
       if (q && !m._searchIndex.includes(q)) return false;
       return true;
     });
-  }, [roleScopedMemos, resolvedRange, statusFilter, categoryFilter, searchTerm]);
+  }, [roleScopedMemos, resolvedRange, statusFilter, categoryFilter, locationFilter, searchTerm]);
 
   const totalPages = Math.max(1, Math.ceil(filteredMemos.length / PAGE_SIZE));
 
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, statusFilter, categoryFilter, dateFilter]);
+  }, [searchTerm, statusFilter, categoryFilter, locationFilter, dateFilter]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -118,7 +143,7 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
       />
 
       <div className="bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="md:col-span-2 relative">
             <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
@@ -151,6 +176,22 @@ export const MemoListView: React.FC<MemoListViewProps> = ({
               {MEMO_STATUSES.map((st) => (
                 <option key={st} value={st}>
                   {st}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <select
+              aria-label="Filter lokasi mesin"
+              value={locationFilter}
+              onChange={(e) => handleLocationChange(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-700 min-h-[44px]"
+            >
+              <option value="ALL">Semua Lokasi</option>
+              {locationOptions.map((loc) => (
+                <option key={loc} value={loc}>
+                  {loc}
                 </option>
               ))}
             </select>

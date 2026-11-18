@@ -108,6 +108,7 @@ export default function App() {
   } | null>(null);
   const [cleanupBanner, setCleanupBanner] = useState<string | null>(null);
 
+  const [locationFilter, setLocationFilter] = useState<string>('ALL');
   const [selectedMemoId, setSelectedMemoId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showProfileSheet, setShowProfileSheet] = useState(false);
@@ -340,6 +341,7 @@ export default function App() {
     setMemos([]);
     setLoadingMemos(true);
     setDateFilter({ preset: 'all', startDate: '', endDate: '' });
+    setLocationFilter('ALL');
     setGlobalScopeFeedback(null);
     setUser(loggedInUser);
     setActiveView('dashboard');
@@ -357,6 +359,7 @@ export default function App() {
     setCleanupBanner(null);
     setGlobalScopeFeedback(null);
     setDateFilter({ preset: 'all', startDate: '', endDate: '' });
+    setLocationFilter('ALL');
     setShowCreateModal(false);
     setShowProfileSheet(false);
     setShowChangePasswordModal(false);
@@ -647,7 +650,17 @@ export default function App() {
               isDateSearchOverride={Boolean(effectiveFetchRange.isDateSearchOverride)}
               onDateFilterChange={setDateFilter}
               onSelectMemo={(memo) => setSelectedMemoId(memo._docId)}
-              onNavigateToMemos={() => setActiveView('memos')}
+              onNavigateToMemos={() => {
+                setLocationFilter('ALL');
+                setActiveView('memos');
+              }}
+              onSelectLocation={(loc, onlyToday) => {
+                setLocationFilter(loc);
+                if (onlyToday) {
+                  setDateFilter({ preset: 'today', startDate: '', endDate: '' });
+                }
+                setActiveView('memos');
+              }}
             />
           )}
 
@@ -658,6 +671,8 @@ export default function App() {
               loading={loadingMemos}
               dateFilter={dateFilter}
               isDateSearchOverride={Boolean(effectiveFetchRange.isDateSearchOverride)}
+              locationFilter={locationFilter}
+              onLocationFilterChange={setLocationFilter}
               onDateFilterChange={setDateFilter}
               onSelectMemo={(memo) => setSelectedMemoId(memo._docId)}
               onOpenCreate={() => setShowCreateModal(true)}
