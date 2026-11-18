@@ -173,9 +173,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
         </div>
       </main>
 
-      <footer className="text-center text-xs text-slate-500 dark:text-slate-400 max-w-5xl w-full mx-auto leading-tight space-y-0.5 relative z-10">
-        <div>Pura Group Unit Offset · {APP_VERSION} · GG</div>
-        <div className="text-[11px] font-mono text-slate-400 dark:text-slate-500">{APP_YEAR}</div>
+      <footer className="text-center text-xs text-slate-500 dark:text-slate-400 max-w-5xl w-full mx-auto leading-tight space-y-1 relative z-10">
+        <div>Sistem Menejemen Perbaikan Mesin · Unit Offset</div>
+        <div className="text-[11px] font-mono text-slate-400 dark:text-slate-500">
+          © {APP_YEAR} · {APP_VERSION} · by GG
+        </div>
       </footer>
     </div>
   );

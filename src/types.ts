@@ -18,6 +18,18 @@ export interface UserAccount {
   role: UserRole;
   specialization: MemoCategory | '';
   password: string;
+  lastLoginAt?: number | null;
+  lastLoginDevice?: string;
+}
+
+export interface LoginLogEntry {
+  id: string;
+  userId: string;
+  username: string;
+  fullName: string;
+  role: UserRole;
+  loginAt: number;
+  device: string;
 }
 
 export interface SessionUser {

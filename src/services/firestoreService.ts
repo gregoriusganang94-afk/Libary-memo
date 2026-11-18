@@ -6,7 +6,9 @@ import {
   getDocFromServer,
   getDocs,
   getDocsFromServer,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   setDoc,
   Timestamp,
@@ -29,6 +31,7 @@ import type {
   DataLoadScope,
   DataLoadScopeMode,
   GlobalLoadScopeState,
+  LoginLogEntry,
   MemoCategory,
   MemoStatus,
   RepairMemo,
@@ -41,6 +44,7 @@ import type {
 const USERS_COLLECTION = 'users';
 const MEMOS_COLLECTION = 'repair_memos';
 const SETTINGS_COLLECTION = 'app_settings';
+const LOGIN_LOGS_COLLECTION = 'login_logs';
 const GLOBAL_SCOPE_DOC_ID = 'server_load_scope';
 const GLOBAL_SCOPE_CACHE_KEY = 'pura_memo_global_scope_v1';
 
@@ -96,6 +100,7 @@ function normalizeUserDoc(docId: string, data: Record<string, unknown>): UserAcc
     : 'TAMU';
 
   const specialization = normalizeSpecialization(data.specialization);
+  const lastLoginParsed = parseFirestoreDate(data.lastLoginAt as TimestampLike);
 
   return {
     _docId: docId,
@@ -105,7 +110,69 @@ function normalizeUserDoc(docId: string, data: Record<string, unknown>): UserAcc
     role,
     specialization,
     password: String(data.password ?? ''),
+    lastLoginAt: lastLoginParsed ? lastLoginParsed.getTime() : null,
+    lastLoginDevice: String(data.lastLoginDevice ?? '').trim(),
   };
+}
+
+function getClientDeviceLabel(): string {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return 'Web';
+  }
+  const isStandalone =
+    window.matchMedia?.('(display-mode: standalone)').matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  const mode = isStandalone ? 'PWA' : 'Web';
+  const ua = navigator.userAgent || '';
+
+  let os = 'Desktop';
+  if (/android/i.test(ua)) os = 'Android';
+  else if (/iPad|iPhone|iPod/i.test(ua)) os = 'iOS';
+  else if (/Mobile/i.test(ua)) os = 'Mobile';
+  else if (/Windows/i.test(ua)) os = 'Windows';
+  else if (/Macintosh|Mac OS/i.test(ua)) os = 'Mac';
+  else if (/Linux/i.test(ua)) os = 'Linux';
+
+  return `${mode} · ${os}`;
+}
+
+async function recordUserLogin(
+  userDocId: string,
+  account: UserAccount,
+  migratedPasswordHash?: string
+): Promise<void> {
+  const nowMs = Date.now();
+  const device = getClientDeviceLabel();
+
+  const userUpdates: Record<string, unknown> = {
+    lastLoginAt: nowMs,
+    lastLoginDevice: device,
+  };
+  if (migratedPasswordHash) {
+    userUpdates.password = migratedPasswordHash;
+  }
+
+  try {
+    await updateDoc(doc(db, USERS_COLLECTION, userDocId), userUpdates);
+  } catch (err) {
+    console.warn('Gagal mencatat waktu login ke profil user:', err);
+  }
+
+  try {
+    const logRef = doc(collection(db, LOGIN_LOGS_COLLECTION));
+    await setDoc(logRef, {
+      id: logRef.id,
+      userId: account.userId,
+      username: account.username,
+      fullName: account.fullName,
+      role: account.role,
+      loginAt: nowMs,
+      device,
+    });
+  } catch (err) {
+    // Non-blocking: firestore.rules might not allow login_logs yet
+    console.warn('Pencatatan log riwayat login dilewati:', err);
+  }
 }
 
 function normalizeMemoDoc(docId: string, data: Record<string, unknown>): RepairMemo {
@@ -247,16 +314,15 @@ export async function authenticateUser(
         account.password
       );
       if (valid) {
+        let migratedHash: string | undefined;
         if (needsMigration) {
           try {
-            const hashedPassword = await hashPassword(passwordInput);
-            await updateDoc(doc(db, USERS_COLLECTION, userDoc.id), {
-              password: hashedPassword,
-            });
+            migratedHash = await hashPassword(passwordInput);
           } catch (migrationErr) {
             console.warn('Migrasi hash password gagal:', migrationErr);
           }
         }
+        await recordUserLogin(userDoc.id, account, migratedHash);
         return {
           _docId: userDoc.id,
           userId: account.userId,
@@ -915,6 +981,61 @@ export function subscribeUsers(
       }
     }
   );
+}
+
+export function subscribeLoginLogs(
+  onData: (logs: LoginLogEntry[]) => void,
+  onRestricted?: () => void
+): Unsubscribe {
+  const q = query(
+    collection(db, LOGIN_LOGS_COLLECTION),
+    orderBy('loginAt', 'desc'),
+    limit(40)
+  );
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const validRoles: UserRole[] = ['ADMIN', 'SUPERVISOR', 'TEKNISI', 'PRODUKSI', 'TAMU'];
+      const list: LoginLogEntry[] = snapshot.docs.map((d) => {
+        const data = d.data() as Record<string, unknown>;
+        const roleRaw = String(data.role ?? 'TAMU').trim().toUpperCase();
+        const role: UserRole = validRoles.includes(roleRaw as UserRole)
+          ? (roleRaw as UserRole)
+          : 'TAMU';
+        const parsedAt = parseFirestoreDate(data.loginAt as TimestampLike);
+        return {
+          id: d.id,
+          userId: String(data.userId ?? ''),
+          username: String(data.username ?? ''),
+          fullName: String(data.fullName ?? data.username ?? ''),
+          role,
+          loginAt: parsedAt ? parsedAt.getTime() : 0,
+          device: String(data.device ?? 'Web').trim() || 'Web',
+        };
+      });
+      onData(list);
+    },
+    (error) => {
+      console.warn('Riwayat login_logs tidak tersedia:', error);
+      onRestricted?.();
+    }
+  );
+}
+
+export async function clearLoginLogs(logIds: string[]): Promise<number> {
+  if (logIds.length === 0) return 0;
+  const CHUNK_SIZE = 400;
+  let deleted = 0;
+  for (let i = 0; i < logIds.length; i += CHUNK_SIZE) {
+    const chunk = logIds.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    for (const id of chunk) {
+      batch.delete(doc(db, LOGIN_LOGS_COLLECTION, id));
+    }
+    await batch.commit();
+    deleted += chunk.length;
+  }
+  return deleted;
 }
 
 export async function createUserAccount(

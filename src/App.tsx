@@ -697,13 +697,10 @@ export default function App() {
             />
           )}
 
-          <footer className="mt-8 pt-4 border-t border-slate-200/70 dark:border-slate-800/70 text-[11px] font-mono text-slate-400 dark:text-slate-500 select-none space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <span>Sistem Menejemen Perbaikan Mesin · Unit Offset</span>
-              <span>{APP_VERSION} · GG</span>
-            </div>
-            <div className="text-center text-slate-400/80 dark:text-slate-600/90">
-              {APP_YEAR}
+          <footer className="mt-8 pt-4 border-t border-slate-200/70 dark:border-slate-800/70 text-center text-[11px] font-mono text-slate-400 dark:text-slate-500 select-none space-y-1">
+            <div>Sistem Menejemen Perbaikan Mesin · Unit Offset</div>
+            <div className="text-slate-400/90 dark:text-slate-500">
+              © {APP_YEAR} · {APP_VERSION} · by GG
             </div>
           </footer>
         </main>
